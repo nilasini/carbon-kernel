@@ -5105,7 +5105,7 @@ public abstract class AbstractUserStoreManager implements UserStoreManager, Pagi
             UserStoreManager secManager = getSecondaryUserStoreManager(domain);
             if (UserCoreConstants.INTERNAL_DOMAIN.equalsIgnoreCase(domain)
                     || APPLICATION_DOMAIN.equalsIgnoreCase(domain) || WORKFLOW_DOMAIN.equalsIgnoreCase(domain)) {
-                return new String[0];
+                return roleList;
             }
             if (secManager != null) {
                 // We have a secondary UserStoreManager registered for this domain.
