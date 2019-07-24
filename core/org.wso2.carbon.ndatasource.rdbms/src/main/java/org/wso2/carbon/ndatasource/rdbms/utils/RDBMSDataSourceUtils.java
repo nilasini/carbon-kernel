@@ -203,10 +203,10 @@ public class RDBMSDataSourceUtils {
 		props.setDefaultCatalog(config.getDefaultCatalog());
 		props.setDriverClassName(config.getDriverClassName());
 		String username = config.getUsername();
-		if (null != username && !username.isEmpty()) {
+		if (null != username && !("").equals(username)) {
 			props.setUsername(username);
 			String password = config.getPassword();
-			if (null != password && !password.isEmpty()) {
+			if (null != password && !("").equals(password)) {
 				props.setPassword(password);
 			}
 		}
@@ -264,9 +264,7 @@ public class RDBMSDataSourceUtils {
 		if (config.getValidationInterval() != null) {
 			props.setValidationInterval(config.getValidationInterval());
 		}
-		if (config.isJmxEnabled() != null) {
-			props.setJmxEnabled(config.isJmxEnabled());
-		}
+		props.setJmxEnabled(config.isJmxEnabled() == null ? false : config.isJmxEnabled());
 		if (config.isFairQueue() != null) {
 			props.setFairQueue(config.isFairQueue());
 		}
@@ -288,17 +286,25 @@ public class RDBMSDataSourceUtils {
 		if (config.isAlternateUsernameAllowed() != null) {
 			props.setAlternateUsernameAllowed(config.isAlternateUsernameAllowed());
 		}
+
+		if (config.getCommitOnReturn() != null) {
+			props.setCommitOnReturn(config.getCommitOnReturn());
+		}
+		if (config.getRollbackOnReturn() != null) {
+			props.setRollbackOnReturn(config.getRollbackOnReturn());
+		}
+
 		if (config.getDataSourceClassName() != null) {
 			handleExternalDataSource(props, config);
 		}
 		if (config.getDatabaseProps() != null) {
+			Properties properties = new Properties();
 			if (!config.getDatabaseProps().isEmpty()) {
-				Properties properties = new Properties();
-				for (RDBMSConfiguration.DatabaseProperty property : config.getDatabaseProps()) {
+				for (RDBMSConfiguration.DataSourceProperty property : config.getDatabaseProps()) {
 					properties.setProperty(property.getName(), property.getValue());
 				}
-				props.setDbProperties(properties);
 			}
+			props.setDbProperties(properties);
 		}
 		return props;
 	}
@@ -324,7 +330,6 @@ public class RDBMSDataSourceUtils {
                 }
 		    }
             result.putAll(tmpPropertiesObjects);
-
 		}
 		return result;
 	}

@@ -15,7 +15,6 @@
  specific language governing permissions and limitations
  under the License.
  --%>
-<%  response.addHeader( "X-FRAME-OPTIONS", "DENY" ); %>
 <%@ page import="java.util.Locale" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" pageEncoding="UTF-8" %>
 <%@ page import="org.wso2.carbon.CarbonConstants" %>
@@ -25,6 +24,7 @@
 <%@ page import="java.util.Iterator" %>
 <%@ page import="org.wso2.carbon.utils.multitenancy.MultitenantConstants" %>
 <%@ page import="org.wso2.carbon.base.ServerConfiguration" %>
+<%@ page import="org.owasp.csrfguard.CsrfGuard" %>
 <%@ taglib uri="http://tiles.apache.org/tags-tiles" prefix="tiles" %>
  <%@ taglib prefix="fmt" uri="http://java.sun.com/jsp/jstl/fmt" %>
 
@@ -54,11 +54,15 @@
 				.getAttribute(MultitenantConstants.TENANT_DOMAIN);
 	}
 	if (tenantDomain != null && !MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equals(tenantDomain)) {
-        String themeRoot = "../../../../t/" + tenantDomain
-				+ "/registry/resource"
-				+ RegistryConstants.GOVERNANCE_REGISTRY_BASE_PATH
-				+ "/repository";
-		mainCSS = themeRoot + "/theme/admin/main.css";
+        if ("true".equals(ServerConfiguration.getInstance().getFirstProperty(CarbonConstants.IS_CLOUD_DEPLOYMENT))) {
+            String themeRoot = "../../../../t/" + tenantDomain
+                    + "/registry/resource"
+                    + RegistryConstants.GOVERNANCE_REGISTRY_BASE_PATH
+                    + "/repository";
+            mainCSS = themeRoot + "/theme/admin/main.css";
+        } else {
+            mainCSS = "../styles/css/main.css";
+        }
         if (request.getSession().getAttribute(
                 CarbonConstants.THEME_URL_RANDOM_SUFFIX_SESSION_KEY) != null) {
             // this random string is used to get the effect of the theme change, where-ever the
@@ -110,6 +114,13 @@
     <link rel="icon" href="../admin/images/favicon.ico" type="image/x-icon"/>
     <link rel="shortcut icon" href="../admin/images/favicon.ico" type="image/x-icon"/>
 
+    <%
+        if (CsrfGuard.getInstance().isEnabled()) {
+    %>
+            <script type="text/javascript" src="../admin/js/csrfPrevention.js"></script>
+    <%
+        }
+    %>
     <script type="text/javascript" src="../admin/js/jquery-1.6.3.min.js"></script>
     <script type="text/javascript" src="../admin/js/jquery.form.js"></script>
     <script type="text/javascript" src="../dialog/js/jqueryui/jquery-ui.min.js"></script>
@@ -136,9 +147,13 @@
 		<%
 		while (itrCollapsedMenuItems.hasNext()) {
 			String menuItem = (String) itrCollapsedMenuItems.next();
-			out.print("if(getCookie('" + menuItem + "') == null){\n");
-			out.print("  setCookie('" + menuItem + "', 'none');\n");
-			out.print("}\n");
+            out.print("if(getCookie('" + menuItem + "') == null){\n");
+            out.print("if (window.location.protocol == \"https:\"){\n");
+            out.print("  setCookie('" + menuItem + "', 'none','','','secure');\n");
+            out.print("} else {");
+            out.print("  setCookie('" + menuItem + "', 'none');\n");
+            out.print("}\n");
+            out.print("}\n");
 		}
 		%>
 		</script>

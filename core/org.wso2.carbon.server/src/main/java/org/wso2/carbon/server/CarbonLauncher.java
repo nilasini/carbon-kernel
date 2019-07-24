@@ -17,27 +17,27 @@
 */
 package org.wso2.carbon.server;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.server.util.Utils;
 
 import java.io.File;
-import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Responsible for launching the Carbon server by launching Equinox OSGi framework.
  */
 public class CarbonLauncher {
 
-    private static Log log = LogFactory.getLog(CarbonLauncher.class);
+    private static final Logger logger = Logger.getLogger(CarbonLauncher.class.getName());
 
     protected static final String FILE_SCHEME = "file:";
     protected static final String FRAMEWORK_BUNDLE_NAME = "org.eclipse.osgi";
@@ -86,7 +86,7 @@ public class CarbonLauncher {
                                 cl = new ChildFirstURLClassLoader(
                                         new URL[]{new URL(initialPropsMap.get(OSGI_FRAMEWORK))}, null);
                             } catch (MalformedURLException e) {
-                                log.error(e.getMessage(), e);
+                                logger.log(Level.SEVERE, e.getMessage(), e);
                             }
                             return cl;
                         }
@@ -129,9 +129,14 @@ public class CarbonLauncher {
      */
     private Map<String, String> buildInitialPropertyMap() {
         Map<String, String> initialPropertyMap = new HashMap<String, String>();
-        String carbonHome = System.getProperty(LauncherConstants.CARBON_HOME);
-        Properties launchProperties = Utils.loadProperties(carbonHome + File.separator + "repository" +
-                File.separator + "conf" + File.separator + "etc" + File.separator + LauncherConstants.LAUNCH_INI);
+        String carbonConfigHome = System.getProperty(LauncherConstants.CARBON_CONFIG_DIR_PATH);
+        Properties launchProperties;
+        if (carbonConfigHome == null) {
+            String carbonHome = System.getProperty(LauncherConstants.CARBON_HOME);
+            launchProperties = Utils.loadProperties(Paths.get(carbonHome, "repository", "conf", "etc", LauncherConstants.LAUNCH_INI).toString());
+        } else {
+            launchProperties = Utils.loadProperties(Paths.get(carbonConfigHome, "etc", LauncherConstants.LAUNCH_INI).toString());
+        }
         for (Object o : launchProperties.entrySet()) {
             Map.Entry entry = (Map.Entry) o;
             String key = (String) entry.getKey();
@@ -149,22 +154,22 @@ public class CarbonLauncher {
         }
         try {
 
-             /**
-            *  in order to support multiple profiling, the new install, configuration and workspace area got to move
-            *  from ../components/ to ../components/ PROFILE_ID/
-            */
+            /**
+             *  in order to support multiple profiling, the new install, configuration and workspace area got to move
+             *  from ../components/ to ../components/ PROFILE_ID/
+             */
             // install.area if not specified
             if (initialPropertyMap.get(OSGI_INSTALL_AREA) == null) {
                 //specifying the install.area according to the running Profile
                 File installDir = new File(platformDirectory, System.getProperty(LauncherConstants.PROFILE_ID));
 
-                 initialPropertyMap
+                initialPropertyMap
                         .put(OSGI_INSTALL_AREA, installDir.toURL().toExternalForm());
             }
 
             // configuration.area if not specified
             if (initialPropertyMap.get(OSGI_CONFIGURATION_AREA) == null) {
-                File configurationDirectory = new File (platformDirectory,
+                File configurationDirectory = new File(platformDirectory,
                         System.getProperty(LauncherConstants.PROFILE_ID) +
                                 File.separator + "configuration");
                 initialPropertyMap.put(OSGI_CONFIGURATION_AREA,
@@ -173,7 +178,7 @@ public class CarbonLauncher {
 
             // instance.area if not specified
             if (initialPropertyMap.get(OSGI_INSTANCE_AREA) == null) {
-                File workspaceDirectory = new File(platformDirectory,  System.getProperty(LauncherConstants.PROFILE_ID) +
+                File workspaceDirectory = new File(platformDirectory, System.getProperty(LauncherConstants.PROFILE_ID) +
                         File.separator + "workspace");
                 initialPropertyMap
                         .put(OSGI_INSTANCE_AREA, workspaceDirectory.toURL().toExternalForm());
@@ -183,12 +188,10 @@ public class CarbonLauncher {
             if (initialPropertyMap.get(OSGI_FRAMEWORK) == null) {
                 // search for osgi.framework in osgi.install.area
                 /*String installArea = initialPropertyMap.get(OSGI_INSTALL_AREA);
-
                 // only support file type URLs for install area
                 if (installArea.startsWith(FILE_SCHEME)) {
                     installArea = installArea.substring(FILE_SCHEME.length());
                 }
-
                 String path = new File(installArea, "plugins").toString();*/
                 String path = new File(platformDirectory, "plugins").toString();
                 path = Utils.searchFor(FRAMEWORK_BUNDLE_NAME, path);

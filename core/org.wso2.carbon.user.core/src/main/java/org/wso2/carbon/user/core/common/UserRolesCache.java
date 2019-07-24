@@ -1,3 +1,4 @@
+
 /*
 *  Copyright (c) 2005-2010, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
 *
@@ -19,6 +20,7 @@ package org.wso2.carbon.user.core.common;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.user.api.UserStoreException;
 import org.wso2.carbon.user.core.UserCoreConstants;
 import org.wso2.carbon.user.core.UserStoreManager;
@@ -33,6 +35,7 @@ public class UserRolesCache {
 
     private static final String USER_ROLES_CACHE_MANAGER = "USER_ROLES_CACHE_MANAGER";
     private static final String USER_ROLES_CACHE = "USER_ROLES_CACHE";
+    private static final String CASE_INSENSITIVE_USERNAME = "CaseInsensitiveUsername";
     private static Log log = LogFactory.getLog(UserRolesCache.class);
     private static UserRolesCache userRolesCache = new UserRolesCache();
 
@@ -86,46 +89,58 @@ public class UserRolesCache {
 
     //add to cache
     public void addToCache(String serverId, int tenantId, String userName, String[] userRoleList) {
+        try {
+            PrivilegedCarbonContext.startTenantFlow();
+            PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
+            carbonContext.setTenantId(tenantId, true);
 
-        Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = this.getUserRolesCache();
-        //check for null
-        if (isCacheNull(cache)) {
-            return;
+            Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = this.getUserRolesCache();
+            //check for null
+            if (isCacheNull(cache)) {
+                return;
+            }
+            if (!isCaseSensitiveUsername(userName, tenantId)) {
+                userName = userName.toLowerCase();
+            }
+            //create cache key
+            UserRolesCacheKey userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId, userName);
+            //create cache entry
+            UserRolesCacheEntry userRolesCacheEntry = new UserRolesCacheEntry(userRoleList);
+            //add to cache
+            cache.put(userRolesCacheKey, userRolesCacheEntry);
+        } finally {
+            PrivilegedCarbonContext.endTenantFlow();
         }
-
-        if (!isUsernameCaseSensitive(userName, tenantId)){
-            userName = userName.toLowerCase();
-        }
-        //create cache key
-        UserRolesCacheKey userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId, userName);
-        //create cache entry
-        UserRolesCacheEntry userRolesCacheEntry = new UserRolesCacheEntry(userRoleList);
-        //add to cache
-        cache.put(userRolesCacheKey, userRolesCacheEntry);
-
     }
 
     //get roles list of user
     public String[] getRolesListOfUser(String serverId, int tenantId, String userName) {
+        try {
+            PrivilegedCarbonContext.startTenantFlow();
+            PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
+            carbonContext.setTenantId(tenantId, true);
 
-        Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = this.getUserRolesCache();
-        //check for null
-        if (isCacheNull(cache)) {
-            return new String[0];
-        }
+            Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = this.getUserRolesCache();
+            //check for null
+            if (isCacheNull(cache)) {
+                return new String[0];
+            }
+            if (!isCaseSensitiveUsername(userName, tenantId)) {
+                userName = userName.toLowerCase();
+            }
+            //create cache key
+            UserRolesCacheKey userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId, userName);
+            //search cache and get cache entry
+            UserRolesCacheEntry userRolesCacheEntry = cache.get(userRolesCacheKey);
 
-        if (!isUsernameCaseSensitive(userName, tenantId)){
-            userName = userName.toLowerCase();
+            if (userRolesCacheEntry == null) {
+                return new String[0];
+            }
+
+            return userRolesCacheEntry.getUserRolesList();
+        } finally {
+            PrivilegedCarbonContext.endTenantFlow();
         }
-        //create cache key
-        UserRolesCacheKey userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId, userName);
-        //search cache and get cache entry
-        UserRolesCacheEntry userRolesCacheEntry = cache.get(userRolesCacheKey);
-        if (userRolesCacheEntry == null) {
-            return new String[0];
-        }
-        
-        return userRolesCacheEntry.getUserRolesList();
     }
 
     public void setTimeOut(int timeOut) {
@@ -134,56 +149,76 @@ public class UserRolesCache {
 
     // lear userRolesCache by tenantId
     public void clearCacheByTenant(int tenantId) {
+        try {
+            PrivilegedCarbonContext.startTenantFlow();
+            PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
+            carbonContext.setTenantId(tenantId, true);
 
-        Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = this.getUserRolesCache();
-        cache.removeAll();
+            Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = this.getUserRolesCache();
+            cache.removeAll();
+        } finally {
+            PrivilegedCarbonContext.endTenantFlow();
+        }
     }
 
     // Clear userRolesCache by serverId, tenant and user name
     public void clearCacheEntry(String serverId, int tenantId, String userName) {
+        try {
+            PrivilegedCarbonContext.startTenantFlow();
+            PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
+            carbonContext.setTenantId(tenantId, true);
+            Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = getUserRolesCache();
+            // Check for null
+            if (isCacheNull(cache)) {
+                return;
+            }
 
-        Cache<UserRolesCacheKey, UserRolesCacheEntry> cache = getUserRolesCache();
-        // Check for null
-        if (isCacheNull(cache)) {
-            return;
-        }
+            boolean caseSensitiveUsername = isCaseSensitiveUsername(userName, tenantId);
+            if (!caseSensitiveUsername) {
+                userName = userName.toLowerCase();
+            }
+            UserRolesCacheKey userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId, userName);
+            cache.remove(userRolesCacheKey);
 
-        if (!isUsernameCaseSensitive(userName, tenantId)){
-            userName = userName.toLowerCase();
-        }
-        UserRolesCacheKey userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId, userName);
-        if (cache.containsKey(userRolesCacheKey)) {
+            String userNameWithCacheIdentifier = UserCoreConstants.IS_USER_IN_ROLE_CACHE_IDENTIFIER + userName;
+
+            // creating new key for isUserHasRole cache.
+            if (!caseSensitiveUsername) {
+                userNameWithCacheIdentifier = userNameWithCacheIdentifier.toLowerCase();
+            }
+
+            userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId, userNameWithCacheIdentifier);
             cache.remove(userRolesCacheKey);
-        }
-        // creating new key for isUserHasRole cache.
-        userRolesCacheKey = new UserRolesCacheKey(serverId, tenantId,
-                UserCoreConstants.IS_USER_IN_ROLE_CACHE_IDENTIFIER + userName);
-        if (cache.containsKey(userRolesCacheKey)) {
-            cache.remove(userRolesCacheKey);
+        } finally {
+            PrivilegedCarbonContext.endTenantFlow();
         }
     }
 
-    private boolean isUsernameCaseSensitive(String username, int tenantId){
-        if (UserStoreMgtDSComponent.getRealmService()!= null) {
+
+    private boolean isCaseSensitiveUsername(String username, int tenantId) {
+
+        if (UserStoreMgtDSComponent.getRealmService() != null) {
             //this check is added to avoid NullPointerExceptions if the osgi is not started yet.
             //as an example when running the unit tests.
             try {
-                UserStoreManager userStoreManager = (UserStoreManager) UserStoreMgtDSComponent.getRealmService()
-                        .getTenantUserRealm(tenantId).getUserStoreManager();
-                UserStoreManager userAvailableUserStoreManager = userStoreManager.getSecondaryUserStoreManager
-                        (removeUserInRoleIdentifier(UserCoreUtil.extractDomainFromName(username)));
-                if (userAvailableUserStoreManager instanceof AbstractUserStoreManager) {
-                    return ((AbstractUserStoreManager) userAvailableUserStoreManager).isCaseSensitiveUsername();
-                } else {
-                    return false;
+                if (UserStoreMgtDSComponent.getRealmService().getTenantUserRealm(tenantId) != null) {
+                    UserStoreManager userStoreManager = (UserStoreManager) UserStoreMgtDSComponent.getRealmService()
+                            .getTenantUserRealm(tenantId).getUserStoreManager();
+                    UserStoreManager userAvailableUserStoreManager = userStoreManager.getSecondaryUserStoreManager
+                            (removeUserInRoleIdentifier(UserCoreUtil.extractDomainFromName(username)));
+                    String isUsernameCaseInsensitiveString = userAvailableUserStoreManager.getRealmConfiguration()
+                            .getUserStoreProperty(CASE_INSENSITIVE_USERNAME);
+                    return !Boolean.parseBoolean(isUsernameCaseInsensitiveString);
+
                 }
+
             } catch (UserStoreException e) {
                 if (log.isDebugEnabled()) {
-                    log.debug("Error while reading user store property CaseSensitiveUsername. Considering as false.");
+                    log.debug("Error while reading user store property CaseInsensitiveUsername. Considering as false.");
                 }
             }
         }
-        return false;
+        return true;
     }
 
     private String removeUserInRoleIdentifier(String modifiedName) {

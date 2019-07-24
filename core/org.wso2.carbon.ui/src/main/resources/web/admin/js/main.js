@@ -1517,7 +1517,7 @@ function showSignIn(serverName, home) {
     var signInHTML = '<div id="loginbox"><div><h2>Sign-in to ' + serverName + ' Management Console</h2></div><div id="formset">' +
                      '<form action="login.action" method="POST" target="_self"><fieldset><legend>Enter login credentials</legend><div>' +
                      '<label for="txtUserName">Username:</label><input type="text" id="txtUserName" name="username" size="30"/>' +
-                     '</div><div><label for="txtPassword">Password:</label><input type="password" id="txtPassword" name="password" size="30"/>' +
+                     '</div><div><label for="txtPassword">Password:</label><input type="password" id="txtPassword" name="password" size="30" autocomplete="off"/>' +
                      '</div><div class="buttonrow"><input type="submit" value="Log In"/><p><a href="#" onclick="javascript:showForgotPassword(\'' + serverName + '\', \'' + home + '\'); return false;">Forgot Password</a>&#160;&#160;&#160;&#160;&#160;' +
                      '<a href="#" onclick="javascript:showSignInHelp(\'' + serverName + '\', \'' + home + '\'); return false;">Sign-in Help</a>&#160;&#160;&#160;&#160;&#160;</p>' +
                      '</div></fieldset></form></div></div><div id="alertMessageBox" style="display:none;position:absolute;z-index: 600;">' +
@@ -1659,6 +1659,20 @@ function isEmpty(fldname) {
     }
     fld.value = fld.value.replace(/^\s\s*/, '').replace(/\s\s*$/, '');
     if (fld.value.length == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+function isEmptyCheckWithoutTrim(fldname) {
+    var fld = document.getElementsByName(fldname)[0];
+    if (fld.value.length == 0) {
+        return true;
+    }
+    var tempFieldValue = fld.value;
+    tempFieldValue = tempFieldValue.replace(/^\s\s*/, '').replace(/\s\s*$/, '');
+    if (tempFieldValue.length == 0) {
         return true;
     }
 

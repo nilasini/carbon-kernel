@@ -18,13 +18,15 @@ package org.wso2.carbon.utils.logging.appenders;
 import org.apache.log4j.AppenderSkeleton;
 import org.apache.log4j.spi.LoggingEvent;
 import org.wso2.carbon.utils.logging.CircularBuffer;
-import org.wso2.carbon.utils.logging.LoggingUtils;
 
 /**
  * This appender will be used to capture the logs and later send to clients, if requested via the
  * logging web service.
  * This maintains a circular buffer, of some fixed amount (say 100).
+ *
+ * @deprecated Replaced by Log4J2 MemoryAppender.
  */
+@Deprecated
 public class MemoryAppender extends AppenderSkeleton {
 
     private CircularBuffer<LoggingEvent> circularBuffer;
@@ -40,7 +42,12 @@ public class MemoryAppender extends AppenderSkeleton {
 
     protected void append(LoggingEvent loggingEvent) {
         if (circularBuffer != null) {
-            circularBuffer.append(LoggingUtils.getSanitizedLoggingEvent(loggingEvent));
+            circularBuffer.append(new LoggingEvent(loggingEvent.getFQNOfLoggerClass(), loggingEvent.getLogger(),
+                                                   loggingEvent.getTimeStamp(), loggingEvent.getLevel(),
+                                                   getSanitizedLoggingMessage(loggingEvent.getMessage()),
+                                                   loggingEvent.getThreadName(), loggingEvent.getThrowableInformation(),
+                                                   loggingEvent.getNDC(), loggingEvent.getLocationInformation(),
+                                                   loggingEvent.getProperties()));
         }
     }
 
@@ -77,5 +84,36 @@ public class MemoryAppender extends AppenderSkeleton {
 
     public void setBufferSize(int bufferSize) {
         this.bufferSize = bufferSize;
+    }
+
+    /**
+     * Returns a String instance sanitized for CR and LF characters if present in the original message
+     *
+     * @param message original message
+     * @return a sanitized String
+     */
+    private static String getSanitizedLoggingMessage(Object message) {
+
+        String sanitizedMessage = message == null ? null : message.toString();
+        if (sanitizedMessage != null && !sanitizedMessage.isEmpty()) {
+            boolean sanitized = false;
+            int index = sanitizedMessage.indexOf('\r');
+            if (index >= 0) {
+                sanitizedMessage = sanitizedMessage.replace('\r', '_');
+                sanitized = true;
+            }
+
+            index = sanitizedMessage.indexOf('\n');
+            if (index >= 0) {
+                sanitizedMessage = sanitizedMessage.replace('\n', '_');
+                sanitized = true;
+            }
+
+            if (sanitized){
+                sanitizedMessage = sanitizedMessage.concat(" (Sanitized)");
+            }
+        }
+
+        return sanitizedMessage;
     }
 }

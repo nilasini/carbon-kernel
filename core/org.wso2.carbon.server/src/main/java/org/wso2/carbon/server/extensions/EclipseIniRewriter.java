@@ -16,17 +16,16 @@ package org.wso2.carbon.server.extensions;/*
 * under the License.
 */
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.server.CarbonLaunchExtension;
 import org.wso2.carbon.server.LauncherConstants;
-import org.wso2.carbon.server.util.FileUtils;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.security.PrivateKey;
+import java.nio.file.Paths;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * A bug in p2 libs(https://bugs.eclipse.org/bugs/show_bug.cgi?id=344153) prevent us from using bundle pooling with
@@ -34,9 +33,17 @@ import java.security.PrivateKey;
  * the absolute path at the server startup.
  */
 public class EclipseIniRewriter implements CarbonLaunchExtension {
-    private static Log log = LogFactory.getLog(EclipseIniRewriter.class);
-    private static final String CARBON_OSGI_DIR_LOCATION = System.getProperty("carbon.home") + File.separator +
-            "repository" + File.separator + "components";
+    private static final Logger logger = Logger.getLogger(EclipseIniRewriter.class.getName());
+    private static final String CARBON_OSGI_DIR_LOCATION;
+
+    static {
+        String componentsPath = System.getProperty(LauncherConstants.CARBON_COMPONENTS_DIR_PATH);
+        if (componentsPath == null) {
+            CARBON_OSGI_DIR_LOCATION = Paths.get(System.getProperty("carbon.home"), "repository", "components").toString();
+        } else {
+            CARBON_OSGI_DIR_LOCATION = componentsPath;
+        }
+    }
 
     public void perform() {
         File eclipseIni = null;
@@ -46,23 +53,20 @@ public class EclipseIniRewriter implements CarbonLaunchExtension {
             // when accessing canonical path, the method actually checks the file in the FS.
             profileLocation = new File(profileLocation).getCanonicalPath();
         } catch (IOException e) {
-            log.error("The directory : " + profileName + "does not exist..", e);
+            logger.log(Level.SEVERE, "The directory : " + profileName + "does not exist..", e);
         }
         // getting the file null.ini
-        eclipseIni = new File(profileLocation + File.separator +"null.ini");
+        eclipseIni = new File(profileLocation + File.separator + "null.ini");
         if (eclipseIni.exists()) {
-            if (log.isDebugEnabled()) {
-                log.debug("processing the null.ini file found in " + profileLocation);
-            }
+            logger.log(Level.FINE, "processing the null.ini file found in " + profileLocation);
+
             rewriteFile(eclipseIni, profileLocation);
             return;
         }
         // null.ini does not exist. trying with eclipse.ini
-        eclipseIni = new File(profileLocation + File.separator +"eclipse.ini");
+        eclipseIni = new File(profileLocation + File.separator + "eclipse.ini");
         if (eclipseIni.exists()) {
-            if (log.isDebugEnabled()) {
-                log.debug("processing the eclispe.ini file found in " + profileLocation);
-            }
+            logger.log(Level.FINE, "processing the eclispe.ini file found in " + profileLocation);
             rewriteFile(eclipseIni, profileLocation);
             return;
         }
@@ -72,17 +76,12 @@ public class EclipseIniRewriter implements CarbonLaunchExtension {
     //  used delete/create method to rewrite file
     private void rewriteFile(File file, String profileLocation) {
         file.delete();
-        PrintWriter pw = null;
-        try {
-            pw = new PrintWriter(new FileWriter(file));
+        try (PrintWriter pw = new PrintWriter(new FileWriter(file))) {
             pw.write("-install\n");
             pw.write(profileLocation);
             pw.flush();
         } catch (IOException e) {
-            log.error("Error while writing to file " + file.getName(), e);
-        } finally {
-            pw.close();
+            logger.log(Level.SEVERE, "Error while writing to file " + file.getName(), e);
         }
-
     }
 }

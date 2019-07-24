@@ -40,10 +40,19 @@ public final class LauncherConstants {
     public static final String SERVICEPACKS_DIR = "servicepacks";
     public static final String SERVICEPACK_PATCHES_FILE = "servicepack_patches.txt";
     public static final String SERVICEPACK_LIB_DIR = "lib";
+    public static final String CARBON_SERVICEPACKS_DIR_PATH = "carbon.servicepacks.dir.path";
+    public static final String CARBON_DROPINS_DIR_PATH = "carbon.dropins.dir.path";
+    public static final String CARBON_COMPONENTS_DIR_PATH= "carbon.components.dir.path";
+    public static final String CARBON_EXTERNAL_LIB_DIR_PATH = "carbon.external.lib.dir.path"; // components/lib
+    public static final String CARBON_EXTENSIONS_DRI_PATH = "carbon.extensions.dir.path";
+    public static final String CARBON_PATCHES_DIR_PATH = "carbon.patches.dir.path";
+    public static final String CARBON_INTERNAL_LIB_DIR_PATH = "carbon.internal.lib.dir.path"; //lib normally internal tomcat
 
     public static final String LAUNCH_INI = "launch.ini";
 
     public static final String CARBON_HOME = "carbon.home";
+    public static final String CARBON_CONFIG_DIR_PATH = "carbon.config.dir.path";
+    public static final String CARBON_NEW_CONFIG_DIR_PATH = "carbon.new.config.dir.path";
     public static final String AXIS2_HOME = "axis2.home";
 
     //Bundle manifest constants
@@ -63,4 +72,14 @@ public final class LauncherConstants {
     public static final String DEFAULT_CARBON_PROFILE = "default";
     public static final String WORKER_NODE = "workerNode";
     public static final String WORKER_PROFILE = "worker";
+    public static final String CIPHER_TRANSFORMATION_SYSTEM_PROPERTY = "org.wso2.CipherTransformation";
+
+
+    //Constants relevant to pax logging
+    public static final String PAX_LOGGING_PROPERTY_FILE_KEY = "org.ops4j.pax.logging.property.file";
+    public static final String PAX_LOGGING_PROPERTIES_FILE = "pax-logging.properties";
+    public static final String PAX_DEFAULT_SERVICE_LOG_LEVEL = "org.ops4j.pax.logging.DefaultServiceLog.level";
+
+    //  Constants relevant to log level.
+    public static final String LOG_LEVEL_WARN = "WARN";
 }

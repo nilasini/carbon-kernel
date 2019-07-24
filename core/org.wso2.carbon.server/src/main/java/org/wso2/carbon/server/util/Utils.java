@@ -19,9 +19,21 @@ package org.wso2.carbon.server.util;
 
 import org.wso2.carbon.server.LauncherConstants;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileFilter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.MalformedURLException;
-import java.util.*;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.StringTokenizer;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 import java.util.zip.ZipEntry;
@@ -55,8 +67,11 @@ public class Utils {
     }
 
     public static File getCarbonComponentRepo() {
-        String carbonRepo = Utils.getCarbonRepoPath();
-        String carbonComponentsRepository = carbonRepo + File.separator + "components";
+        String carbonComponentsRepository = System.getProperty(LauncherConstants.CARBON_COMPONENTS_DIR_PATH);
+        if (carbonComponentsRepository == null) {
+            String carbonRepo = Utils.getCarbonRepoPath();
+            carbonComponentsRepository = Paths.get(carbonRepo, "components").toString();
+        }
         File componentRepo = new File(carbonComponentsRepository);
         if (!componentRepo.exists() && !componentRepo.mkdirs()) {
             System.err.println("Fail to create the directory: " + componentRepo.getAbsolutePath());
@@ -85,16 +100,27 @@ public class Utils {
         System.out.println();
 
         System.out.println("system-properties:");
+        String confPath = System.getProperty(LauncherConstants.CARBON_CONFIG_DIR_PATH);
         System.out.println("\t-DosgiConsole=[port]\t\tStart Carbon with Equinox OSGi console. " +
                 "\n\t\t\t\t\tIf the optional 'port' parameter is provided, a telnet port will be opened");
-        System.out.println("\t-DosgiDebugOptions=[options-file]" +
-                "\n\t\t\t\t\tStart Carbon with OSGi debugging enabled. " +
-                "\n\t\t\t\t\tDebug options are loaded from the file repository/conf/etc/osgi-debug.options.");
+        if (confPath == null) {
+            System.out.println("\t-DosgiDebugOptions=[options-file]" +
+                    "\n\t\t\t\t\tStart Carbon with OSGi debugging enabled. " +
+                    "\n\t\t\t\t\tDebug options are loaded from the file repository/conf/etc/osgi-debug.options.");
+        } else {
+            String relativeConfDirPath = Paths.get(System.getProperty(LauncherConstants.CARBON_HOME)).relativize(Paths.get(confPath)).toString();
+            System.out.println("\t-DosgiDebugOptions=[options-file]" +
+                    "\n\t\t\t\t\tStart Carbon with OSGi debugging enabled. " +
+                    "\n\t\t\t\t\tDebug options are loaded from the file " + relativeConfDirPath + "/etc/osgi-debug.options.");
+        }
         System.out.println("\t-Dsetup\t\t\t\tClean the Registry & other configuration, recreate DB, re-populate the configuration, and start Carbon");
         System.out.println("\t-DportOffset=<offset>\t\tThe number by which all ports defined in the runtime ports will be offset");
         System.out.println("\t-DserverRoles=<roles>\t\tA comma separated list of roles. Used in deploying cApps");
         System.out.println("\t-DworkerNode\t\t\tSet this system property when starting as a worker node.");
         System.out.println("\t-Dprofile=<profileName>\t\tStarts the server as the specified profile. e.g. worker profile.");
+        System.out.println("\t-DencryptSecrets=true\t\tEncrypt the secrets in deployment Configuration");
+        System.out.println("\t-DforceConfigUpdate=true\t\t Overwrite the Configurations");
+
         System.out.println("\t-Dtenant.idle.time=<time>\tIf a tenant is idle for the specified time, tenant will be unloaded. Default tenant idle time is 30mins.");
         System.out.println("\t\t\t\t\tThis is required in clustered setups with master and worker nodes.");
         System.out.println();
@@ -251,9 +277,12 @@ public class Utils {
         // First try to get from the System property
         String enableOsgiDebug = System.getProperty(LauncherConstants.ENABLE_OSGI_DEBUG);
         if (enableOsgiDebug != null && enableOsgiDebug.toLowerCase().equals("true")) {
-            String carbonRepo = System.getProperty(LauncherConstants.CARBON_HOME)+File.separator + "repository";
-            enableOsgiDebug = carbonRepo + File.separator + "conf" +
-                    File.separator + "etc" + File.separator + "osgi-debug.options";
+            String carbonConfigRepo = System.getProperty(LauncherConstants.CARBON_CONFIG_DIR_PATH);
+            if (carbonConfigRepo == null) {
+                enableOsgiDebug = Paths.get(System.getProperty(LauncherConstants.CARBON_HOME), "repository", "conf", "etc", "osgi-debug.options").toString();
+            } else {
+                enableOsgiDebug = Paths.get(carbonConfigRepo, "etc", "osgi-debug.options").toString();
+            }
             args.add("-debug");
             args.add(enableOsgiDebug);
             System.out.println("OSGi debugging has been enabled with options: " + enableOsgiDebug);
@@ -272,7 +301,7 @@ public class Utils {
      * @return The bundle directory
      */
     public static File getBundleDirectory(String bundleDir) {
-        String carbonHome = System.getProperty("carbon.home");
+        String carbonHome = System.getProperty(LauncherConstants.CARBON_HOME);
 
         if (carbonHome == null) {
             carbonHome = System.getenv("CARBON_HOME");
@@ -425,9 +454,11 @@ public class Utils {
             throw new RuntimeException(sourceDir + " is not a directory");
         }
 
-        ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(destArchive));
-        zipDir(zipDir, zos, sourceDir);
+        FileOutputStream fileOutputStream = new FileOutputStream(destArchive);
+        ZipOutputStream zos = new ZipOutputStream(fileOutputStream);
+        zipDir(zipDir, zos, zipDir.getAbsolutePath());
         zos.close();
+        fileOutputStream.close();
     }
 
     protected static void zipDir(File zipDir, ZipOutputStream zos, String archiveSourceDir)
@@ -580,15 +611,15 @@ public class Utils {
                 }
 
                 if (!f.isDirectory()) {
-                    OutputStream out = new FileOutputStream(f);
-                    byte[] buf = new byte[40960];
+                    try (OutputStream out = new FileOutputStream(f)) {
+                        byte[] buf = new byte[40960];
 
-                    // Transfer bytes from the ZIP file to the output file
-                    int len;
-                    while ((len = zin.read(buf)) > 0) {
-                        out.write(buf, 0, len);
+                        // Transfer bytes from the ZIP file to the output file
+                        int len;
+                        while ((len = zin.read(buf)) > 0) {
+                            out.write(buf, 0, len);
+                        }
                     }
-                    out.close();
                 }
             }
         } catch (IOException e) {
@@ -613,33 +644,32 @@ public class Utils {
      */
     public static String parseJar(File jarFile) throws IOException {
         List<String> exportedPackagesList = new ArrayList<String>();
-        ZipInputStream zipInputStream = new ZipInputStream(
-                new BufferedInputStream(new FileInputStream(jarFile)));
-        List<ZipEntry> entries = populateList(zipInputStream);
-        zipInputStream.close();
+        StringBuffer exportedPackages = new StringBuffer();
+        try (ZipInputStream zipInputStream = new ZipInputStream(
+                new BufferedInputStream(new FileInputStream(jarFile)))) {
+            List<ZipEntry> entries = populateList(zipInputStream);
 
-        for (ZipEntry entry : entries) {
-            String path = entry.getName();
-            if (!path.endsWith("/") && path.endsWith(".class")) {
-                //This is package that contains classes. Thus, exportedPackagesList
-                int index = path.lastIndexOf('/');
-                if (index != -1) {
-                    path = path.substring(0, index);
-                    path = path.replaceAll("/", ".");
-                    if (!exportedPackagesList.contains(path)) {
-                        exportedPackagesList.add(path);
+            for (ZipEntry entry : entries) {
+                String path = entry.getName();
+                if (!path.endsWith("/") && path.endsWith(".class")) {
+                    //This is package that contains classes. Thus, exportedPackagesList
+                    int index = path.lastIndexOf('/');
+                    if (index != -1) {
+                        path = path.substring(0, index);
+                        path = path.replaceAll("/", ".");
+                        if (!exportedPackagesList.contains(path)) {
+                            exportedPackagesList.add(path);
+                        }
                     }
                 }
             }
-        }
 
-        String[] packageArray =
-                exportedPackagesList.toArray(new String[exportedPackagesList.size()]);
-        StringBuffer exportedPackages = new StringBuffer();
-        for (int i = 0; i < packageArray.length; i++) {
-            exportedPackages.append(packageArray[i]);
-            if (i != (packageArray.length - 1)) {
-                exportedPackages.append(",");
+            String[] packageArray = exportedPackagesList.toArray(new String[exportedPackagesList.size()]);
+            for (int i = 0; i < packageArray.length; i++) {
+                exportedPackages.append(packageArray[i]);
+                if (i != (packageArray.length - 1)) {
+                    exportedPackages.append(",");
+                }
             }
         }
         return exportedPackages.toString();
@@ -664,18 +694,23 @@ public class Utils {
     }
 
     public static File getBundleConfigDirectory() {
-        String carbonRepo = System.getenv("CARBON_REPOSITORY");
-        if (carbonRepo == null) {
-            carbonRepo = System.getProperty("carbon.repository");
+        String carbonConfigPath = System.getProperty(LauncherConstants.CARBON_CONFIG_DIR_PATH);
+        String bundleConfigDirLocation;
+        if(carbonConfigPath == null) {
+            String carbonRepo = System.getenv("CARBON_REPOSITORY");
+            if (carbonRepo == null) {
+                carbonRepo = System.getProperty("carbon.repository");
+            }
+            if (carbonRepo == null) {
+                carbonRepo = Paths.get(System.getProperty("carbon.home"), "repository").toString();
+            }
+            bundleConfigDirLocation = Paths.get(carbonRepo, "conf", "etc", "bundle-config").toString();
+        } else {
+            bundleConfigDirLocation = Paths.get(carbonConfigPath, "etc", "bundle-config").toString();
         }
-        if (carbonRepo == null) {
-            carbonRepo = System.getProperty("carbon.home") + File.separator + "repository";
-        }
-        String bundleConfigDirLocation = carbonRepo + File.separator + "conf" + File.separator +
-                "etc" + File.separator + "bundle-config";
         File bundleConfigDir = new File(bundleConfigDirLocation);
         if(!bundleConfigDir.exists()) {
-          return null;
+            return null;
         }
         return bundleConfigDir;
     }

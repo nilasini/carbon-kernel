@@ -17,8 +17,6 @@
 */
 package org.wso2.carbon.server.extensions;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.server.CarbonLaunchExtension;
 import org.wso2.carbon.server.LauncherConstants;
 import org.wso2.carbon.server.util.JarInfo;
@@ -28,20 +26,33 @@ import org.wso2.carbon.server.util.Utils;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Copy all the patches found in the patches directory to the plugins directory in a recursive manner.
  */
 public class PatchInstaller implements CarbonLaunchExtension {
-    private static Log log = LogFactory.getLog(PatchInstaller.class);
+    private static final Logger log = Logger.getLogger(PatchInstaller.class.getName());
 
     public void perform() {
         File carbonComponentDir = Utils.getCarbonComponentRepo();
+        String patchesPath = System.getProperty(LauncherConstants.CARBON_PATCHES_DIR_PATH);
+        String servicepackPaths = System.getProperty(LauncherConstants.CARBON_SERVICEPACKS_DIR_PATH);
         File plugins = new File(carbonComponentDir, LauncherConstants.PLUGINS_DIR);
-        File servicepackDir = new File(carbonComponentDir, LauncherConstants.SERVICEPACKS_DIR);
-        File patchesDir = new File(carbonComponentDir, LauncherConstants.PARENT_PATCHES_DIR);
+        File servicepackDir;
+        File patchesDir;
+        if (servicepackPaths == null) {
+            servicepackDir = new File(carbonComponentDir, LauncherConstants.SERVICEPACKS_DIR);
+        } else {
+            servicepackDir = new File(servicepackPaths);
+        }
+        if(patchesPath == null) {
+            patchesDir = new File(carbonComponentDir, LauncherConstants.PARENT_PATCHES_DIR);
+        } else {
+            patchesDir = new File(patchesPath);
+        }
         File prePatchedDirFile = new File(PatchUtils.getMetaDirectory(), LauncherConstants.PRE_PATCHED_DIR_FILE);
 
 
@@ -54,15 +65,15 @@ public class PatchInstaller implements CarbonLaunchExtension {
                 patchesChanged = PatchUtils.checkUpdatedJars(latestPatchedJar);
             }
             if (patchesChanged) {
-                log.info("Patch changes detected ");
+                log.log(Level.INFO, "Patch changes detected");
                 PatchUtils.applyServicepacksAndPatches(servicepackDir , patchesDir, plugins);
             }
             // performs md5sum of latestPatchedJars against jars in plugin directory
             PatchUtils.checkMD5Checksum(latestPatchedJar, plugins, patchesChanged);
         } catch (IOException e) {
-            log.error("Error occurred while applying patches", e);
+            log.log(Level.SEVERE, "Error occurred while applying patches", e);
         } catch (Exception e) {
-            log.error("Error occurred while verifying md5 checksum of patched jars", e);
+            log.log(Level.SEVERE, "Error occurred while verifying md5 checksum of patched jars", e);
         }
     }
 }

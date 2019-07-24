@@ -17,6 +17,8 @@
  */
 package org.wso2.carbon.user.core.claim;
 
+import org.wso2.carbon.base.ServerConfiguration;
+import org.wso2.carbon.caching.impl.CachingConstants;
 import org.wso2.carbon.user.core.UserStoreException;
 import org.wso2.carbon.user.core.claim.builder.ClaimBuilder;
 import org.wso2.carbon.user.core.claim.builder.ClaimBuilderException;
@@ -24,13 +26,12 @@ import org.wso2.carbon.user.core.claim.dao.ClaimDAO;
 import org.wso2.carbon.user.core.internal.UMListenerServiceComponent;
 import org.wso2.carbon.user.core.listener.ClaimManagerListener;
 
-import javax.sql.DataSource;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.sql.DataSource;
 
 public class DefaultClaimManager implements ClaimManager {
 
@@ -68,6 +69,10 @@ public class DefaultClaimManager implements ClaimManager {
             this.claimMapping = new ConcurrentHashMap<String, ClaimMapping>();
             this.claimMapping.putAll(claimMapping);
             this.claimCache.invalidateCache();
+            if (ServerConfiguration.getInstance().getFirstProperty(CachingConstants.FORCE_LOCAL_CACHE) != null &&
+                    ServerConfiguration.getInstance().getFirstProperty(CachingConstants.FORCE_LOCAL_CACHE).equals("true")) {
+                this.claimCache.setIsAlreadyInitialize(true);
+            }
         }
     }
 
@@ -75,21 +80,25 @@ public class DefaultClaimManager implements ClaimManager {
      * {@inheritDoc}
      */
     public String getAttributeName(String claimURI) throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.getAttributeName(claimURI)) {
-                return null;
+
+        if (claimURI != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.getAttributeName(claimURI)) {
+                    return null;
+                }
+            }
+
+            if (claimCache.isInvalid()) {
+                this.claimMapping = getClaimMapFromDB();
+            }
+
+            ClaimMapping mapping = claimMapping.get(claimURI);
+            if (mapping != null) {
+                return mapping.getMappedAttribute();
             }
         }
 
-        if (claimCache.isInvalid()) {
-            this.claimMapping = getClaimMapFromDB();
-        }
-        ClaimMapping mapping = claimMapping.get(claimURI);
-        if (mapping != null) {
-            return mapping.getMappedAttribute();
-        }
         return null;
     }
 
@@ -100,29 +109,33 @@ public class DefaultClaimManager implements ClaimManager {
      * @throws UserStoreException
      */
     public String getAttributeName(String domainName, String claimURI) throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.getAttributeName(domainName, claimURI)) {
-                return null;
+
+        if (claimURI != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.getAttributeName(domainName, claimURI)) {
+                    return null;
+                }
+            }
+
+            if (claimCache.isInvalid()) {
+                this.claimMapping = getClaimMapFromDB();
+            }
+
+            ClaimMapping mapping = claimMapping.get(claimURI);
+            if (mapping != null) {
+                if (domainName != null) {
+                    String mappedAttrib = mapping.getMappedAttribute(domainName.toUpperCase());
+                    if (mappedAttrib != null) {
+                        return mappedAttrib;
+                    }
+                    return mapping.getMappedAttribute();
+                } else {
+                    return mapping.getMappedAttribute();
+                }
             }
         }
 
-        if (claimCache.isInvalid()) {
-            this.claimMapping = getClaimMapFromDB();
-        }
-        ClaimMapping mapping = claimMapping.get(claimURI);
-        if (mapping != null) {
-            if (domainName != null) {
-                String mappedAttrib = mapping.getMappedAttribute(domainName.toUpperCase());
-                if (mappedAttrib != null) {
-                    return mappedAttrib;
-                }
-                return mapping.getMappedAttribute();
-            } else {
-                return mapping.getMappedAttribute();
-            }
-        }
         return null;
     }
 
@@ -130,36 +143,45 @@ public class DefaultClaimManager implements ClaimManager {
      * {@inheritDoc}
      */
     public Claim getClaim(String claimURI) throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.getClaim(claimURI)) {
-                return null;
+
+        if (claimURI != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.getClaim(claimURI)) {
+                    return null;
+                }
+            }
+
+            if (claimCache.isInvalid()) {
+                this.claimMapping = getClaimMapFromDB();
+            }
+
+            ClaimMapping mapping = claimMapping.get(claimURI);
+            if (mapping != null) {
+                return mapping.getClaim();
             }
         }
 
-        if (claimCache.isInvalid()) {
-            this.claimMapping = getClaimMapFromDB();
-        }
-        ClaimMapping mapping = claimMapping.get(claimURI);
-        if (mapping != null) {
-            return mapping.getClaim();
-        }
         return null;
     }
 
     public ClaimMapping getClaimMapping(String claimURI) throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.getClaimMapping(claimURI)) {
-                return null;
+
+        if (claimURI != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.getClaimMapping(claimURI)) {
+                    return null;
+                }
             }
+            if (claimCache.isInvalid()) {
+                this.claimMapping = getClaimMapFromDB();
+            }
+
+            return claimMapping.get(claimURI);
+        } else {
+            throw new UserStoreException("claimURI value is null.");
         }
-        if (claimCache.isInvalid()) {
-            this.claimMapping = getClaimMapFromDB();
-        }
-        return claimMapping.get(claimURI);
     }
 
     /**
@@ -168,8 +190,7 @@ public class DefaultClaimManager implements ClaimManager {
     public org.wso2.carbon.user.api.ClaimMapping[] getAllSupportClaimMappingsByDefault()
             throws UserStoreException {
         // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
+        for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
             if (!listener.getAllSupportClaimMappingsByDefault()) {
                 return null;
             }
@@ -177,13 +198,12 @@ public class DefaultClaimManager implements ClaimManager {
         if (claimCache.isInvalid()) {
             this.claimMapping = getClaimMapFromDB();
         }
-        List<ClaimMapping> claimList = new ArrayList<ClaimMapping>();
-        Iterator<Entry<String, ClaimMapping>> iterator = claimMapping.entrySet().iterator();
 
-        for (; iterator.hasNext(); ) {
-            ClaimMapping claimMapping = iterator.next().getValue();
-            Claim claim = claimMapping.getClaim();
-            if (claim.isSupportedByDefault()) {
+        List<ClaimMapping> claimList = new ArrayList<ClaimMapping>();
+        for (Entry<String, ClaimMapping> claimMappingEntry : claimMapping.entrySet()) {
+            ClaimMapping claimMapping = claimMappingEntry.getValue();
+            if (claimMapping != null && claimMapping.getClaim() != null
+                    && claimMapping.getClaim().isSupportedByDefault()) {
                 claimList.add(claimMapping);
             }
         }
@@ -196,8 +216,7 @@ public class DefaultClaimManager implements ClaimManager {
      */
     public org.wso2.carbon.user.api.ClaimMapping[] getAllClaimMappings() throws UserStoreException {
         // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
+        for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
             if (!listener.getAllClaimMappings()) {
                 return null;
             }
@@ -206,14 +225,15 @@ public class DefaultClaimManager implements ClaimManager {
         if (claimCache.isInvalid()) {
             this.claimMapping = getClaimMapFromDB();
         }
-        List<ClaimMapping> claimList = null;
-        claimList = new ArrayList<ClaimMapping>();
-        Iterator<Entry<String, ClaimMapping>> iterator = claimMapping.entrySet().iterator();
 
-        for (; iterator.hasNext(); ) {
-            ClaimMapping claimMapping = iterator.next().getValue();
-            claimList.add(claimMapping);
+        List<ClaimMapping> claimList = new ArrayList<>();
+        for (Entry<String, ClaimMapping> claimMappingEntry : claimMapping.entrySet()) {
+            ClaimMapping claimMapping = claimMappingEntry.getValue();
+            if (claimMapping != null) {
+                claimList.add(claimMapping);
+            }
         }
+
         return claimList.toArray(new ClaimMapping[claimList.size()]);
     }
 
@@ -222,24 +242,26 @@ public class DefaultClaimManager implements ClaimManager {
      */
     public org.wso2.carbon.user.api.ClaimMapping[] getAllClaimMappings(String dialectUri)
             throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.getAllClaimMappings(dialectUri)) {
-                return null;
-            }
-        }
-        if (claimCache.isInvalid()) {
-            this.claimMapping = getClaimMapFromDB();
-        }
-        List<ClaimMapping> claimList = null;
-        claimList = new ArrayList<ClaimMapping>();
-        Iterator<Entry<String, ClaimMapping>> iterator = claimMapping.entrySet().iterator();
 
-        for (; iterator.hasNext(); ) {
-            ClaimMapping claimMapping = iterator.next().getValue();
-            if (claimMapping.getClaim().getDialectURI().equals(dialectUri)) {
-                claimList.add(claimMapping);
+        List<ClaimMapping> claimList = new ArrayList<>();
+        if (dialectUri != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.getAllClaimMappings(dialectUri)) {
+                    return null;
+                }
+            }
+
+            if (claimCache.isInvalid()) {
+                this.claimMapping = getClaimMapFromDB();
+            }
+
+            for (Entry<String, ClaimMapping> claimMappingEntry : claimMapping.entrySet()) {
+                ClaimMapping claimMapping = claimMappingEntry.getValue();
+                if (claimMapping != null && claimMapping.getClaim() != null
+                        && claimMapping.getClaim().getDialectURI().equals(dialectUri)) {
+                    claimList.add(claimMapping);
+                }
             }
         }
         return claimList.toArray(new ClaimMapping[claimList.size()]);
@@ -251,8 +273,7 @@ public class DefaultClaimManager implements ClaimManager {
     public org.wso2.carbon.user.api.ClaimMapping[] getAllRequiredClaimMappings()
             throws UserStoreException {
         // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
+        for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
             if (!listener.getAllRequiredClaimMappings()) {
                 return null;
             }
@@ -260,14 +281,11 @@ public class DefaultClaimManager implements ClaimManager {
         if (claimCache.isInvalid()) {
             this.claimMapping = getClaimMapFromDB();
         }
-        List<ClaimMapping> claimList = null;
-        claimList = new ArrayList<ClaimMapping>();
-        Iterator<Entry<String, ClaimMapping>> iterator = claimMapping.entrySet().iterator();
 
-        for (; iterator.hasNext(); ) {
-            ClaimMapping claimMapping = iterator.next().getValue();
-            Claim claim = claimMapping.getClaim();
-            if (claim.isRequired()) {
+        List<ClaimMapping> claimList = new ArrayList<>();
+        for (Entry<String, ClaimMapping> entry : claimMapping.entrySet()) {
+            ClaimMapping claimMapping = entry.getValue();
+            if (claimMapping != null && claimMapping.getClaim() != null && claimMapping.getClaim().isRequired()) {
                 claimList.add(claimMapping);
             }
         }
@@ -277,8 +295,7 @@ public class DefaultClaimManager implements ClaimManager {
 
     public String[] getAllClaimUris() throws UserStoreException {
         // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
+        for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
             if (!listener.getAllClaimUris()) {
                 return null;
             }
@@ -291,32 +308,35 @@ public class DefaultClaimManager implements ClaimManager {
 
     public void addNewClaimMapping(org.wso2.carbon.user.api.ClaimMapping mapping)
             throws org.wso2.carbon.user.api.UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.addNewClaimMapping(mapping)) {
-                return;
+
+        if (mapping != null && mapping.getClaim() != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.addNewClaimMapping(mapping)) {
+                    return;
+                }
             }
+
+            if (claimCache.isInvalid()) {
+                this.claimMapping = getClaimMapFromDB();
+            }
+            addNewClaimMapping(getClaimMapping(mapping));
+            this.claimCache.invalidateCache();
         }
-        if (claimCache.isInvalid()) {
-            this.claimMapping = getClaimMapFromDB();
-        }
-        addNewClaimMapping(getClaimMapping(mapping));
-        this.claimCache.invalidateCache();
     }
 
     /**
      * {@inheritDoc}
      */
     public void addNewClaimMapping(ClaimMapping mapping) throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.addNewClaimMapping(mapping)) {
-                return;
-            }
-        }
+
         if (mapping != null && mapping.getClaim() != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.addNewClaimMapping(mapping)) {
+                    return;
+                }
+            }
 
             if (claimCache.isInvalid()) {
                 this.claimMapping = getClaimMapFromDB();
@@ -334,14 +354,14 @@ public class DefaultClaimManager implements ClaimManager {
      */
     public void deleteClaimMapping(org.wso2.carbon.user.api.ClaimMapping mapping)
             throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.deleteClaimMapping(mapping)) {
-                return;
-            }
-        }
+
         if (mapping != null && mapping.getClaim() != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.deleteClaimMapping(mapping)) {
+                    return;
+                }
+            }
 
             if (claimCache.isInvalid()) {
                 this.claimMapping = getClaimMapFromDB();
@@ -398,14 +418,14 @@ public class DefaultClaimManager implements ClaimManager {
      */
     public void updateClaimMapping(org.wso2.carbon.user.api.ClaimMapping mapping)
             throws UserStoreException {
-        // call listeners
-        for (ClaimManagerListener listener : UMListenerServiceComponent
-                .getClaimManagerListeners()) {
-            if (!listener.updateClaimMapping(mapping)) {
-                return;
-            }
-        }
+
         if (mapping != null && mapping.getClaim() != null) {
+            // call listeners
+            for (ClaimManagerListener listener : UMListenerServiceComponent.getClaimManagerListeners()) {
+                if (!listener.updateClaimMapping(mapping)) {
+                    return;
+                }
+            }
 
             if (claimCache.isInvalid()) {
                 this.claimMapping = getClaimMapFromDB();
@@ -419,7 +439,8 @@ public class DefaultClaimManager implements ClaimManager {
     }
 
     private ClaimMapping getClaimMapping(org.wso2.carbon.user.api.ClaimMapping claimMapping) {
-        ClaimMapping claimMap = null;
+
+        ClaimMapping claimMap;
         if (claimMapping != null) {
             claimMap = new ClaimMapping(getClaim(claimMapping.getClaim()), claimMapping.getMappedAttribute());
             claimMap.setMappedAttributes(claimMapping.getMappedAttributes());
@@ -449,7 +470,7 @@ public class DefaultClaimManager implements ClaimManager {
     }
 
     private Map<String, ClaimMapping> getClaimMapFromDB() throws UserStoreException {
-        Map<String, ClaimMapping> claimMap = new ConcurrentHashMap<String, ClaimMapping>();
+        Map<String, ClaimMapping> claimMap = new ConcurrentHashMap<>();
         try {
             Map<String, ClaimMapping> dbClaimMap = this.claimBuilder.buildClaimMappingsFromDatabase(this.datasource, null);
             claimMap.putAll(dbClaimMap);

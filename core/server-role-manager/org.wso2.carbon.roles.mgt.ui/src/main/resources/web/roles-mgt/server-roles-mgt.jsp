@@ -16,6 +16,7 @@
 ~ under the License.
 -->
 <%@ page import="org.apache.axis2.context.ConfigurationContext" %>
+<%@ page import="org.owasp.encoder.Encode" %>
 <%@ page import="org.wso2.carbon.CarbonConstants" %>
 <%@ page import="org.wso2.carbon.roles.mgt.ui.ServerRoleManagerClient" %>
 <%@ page import="org.wso2.carbon.ui.CarbonUIMessage" %>
@@ -63,8 +64,22 @@
         var serverRoleName = serverRole;
         CARBON.showConfirmationDialog('<fmt:message key="confirm.delete.server-role"/>  \'' +
                                       serverRoleName + '\' ?', function () {
-            location.href = 'delete-server-role.jsp?serverRoleName=' + serverRoleName +
-                            '&serverRoleType=' + serverRoleType;
+
+            jQuery.ajax({
+                type: "POST",
+                url: "delete-server-role.jsp",
+                headers: {
+                    Accept: "text/html"
+                },
+                data: {"serverRoleName": serverRoleName, "serverRoleType": serverRoleType},
+                async: false,
+                success: function (responseText, status, XMLHttpRequest) {
+                    if (status == "success") {
+                        location.assign("server-roles-mgt.jsp");
+                    }
+                }
+            });
+
         }, null);
     }
 
@@ -73,9 +88,22 @@
         var serverRoleType = '<fmt:message key="server-role.type.custom"/>';
 
         if (validateInput(serverRoleName.value, serverRoleType)) {
-            location.href = 'add-server-role.jsp?serverRoleName=' + serverRoleName.value +
-                            "&serverRoleType="
-                    + serverRoleType;
+
+            jQuery.ajax({
+                type: "POST",
+                url: "add-server-role.jsp",
+                headers: {
+                    Accept: "text/html"
+                },
+                data: {"serverRoleName": serverRoleName.value, "serverRoleType": serverRoleType},
+                async: false,
+                success: function (responseText, status, XMLHttpRequest) {
+                    if (status == "success") {
+                        location.assign("server-roles-mgt.jsp");
+                    }
+                }
+            });
+
         } else {
 
         }
@@ -126,7 +154,7 @@
     <%if(array != null) {
  if (array.length != 0){%>
         for (var i = 0; i <= <%=array.length%>; i++) {
-            if ('<%=array[j]%>' == serverRoleName) {
+            if ('<%=Encode.forHtml(array[j])%>' == serverRoleName) {
                 return true;
             }
         <%j++;%>
@@ -210,7 +238,7 @@
                 <td><fmt:message key="server-role.type.default"/></td>
                 <td>
                     <a href="#"
-                       onclick="deleteServerRole('<%=defaultServerRole %>',
+                       onclick="deleteServerRole('<%=Encode.forJavaScript(defaultServerRole)%>',
                        '<fmt:message key="server-role.type.default"/>')"
                        class="icon-link"
                        style="background-image:url(../roles-mgt/images/delete.gif);"><fmt:message
@@ -229,7 +257,7 @@
                 <td><fmt:message key="server-role.type.custom"/></td>
                 <td>
                     <a href="#"
-                       onclick="deleteServerRole('<%=customServerRole%>',
+                       onclick="deleteServerRole('<%=Encode.forJavaScript(customServerRole)%>',
                        '<fmt:message key="server-role.type.custom"/>')"
                        class="icon-link"
                        style="background-image:url(../roles-mgt/images/delete.gif);"><fmt:message

@@ -17,6 +17,7 @@ package org.wso2.carbon;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.base.ServerConfiguration;
 import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
 
 import java.io.File;
@@ -42,6 +43,7 @@ public final class CarbonConstants {
     
     public static final String REGISTRY_ANONNYMOUS_USERNAME = "wso2.anonymous.user";
     public static final String REGISTRY_ANONNYMOUS_ROLE_NAME = "system/wso2.anonymous.role";
+    public static final String TOMCAT_RANDOM_PORT_ENABLE= "tomcat.random.port.enable";
 
     public static final String UI_PERMISSION_NAME = "permission";
     public static final String UI_PERMISSION_COLLECTION = "/" + UI_PERMISSION_NAME;
@@ -49,6 +51,8 @@ public final class CarbonConstants {
     public static final String UI_PROTECTED_PERMISSION_COLLECTION = UI_PERMISSION_COLLECTION + "/protected";
     public static final String UI_PERMISSION_ACTION = "ui.execute";
     public static final String UI_USER_PERMISSIONS = "user-permissions";
+
+    public static final String IS_PASSWORD_TRIM_ENABLED = "EnablePasswordTrim";
 
     public static final String AUTHZ_FAULT_CODE = "WSO2CarbonAuthorizationFailure";
     public static final String MODULE_NOT_FOUND_FAULT_CODE = "Axis2ModuleNotFound";
@@ -381,7 +385,16 @@ public final class CarbonConstants {
     public static final String LOGGED_USER = "logged-user";
 
     /*Constants used in handling multiple user store operations*/
-    public static final String DOMAIN_SEPARATOR = "/";
+    public static final String DOMAIN_SEPARATOR;
+
+    static {
+        String userDomainSeparator = ServerConfiguration.getInstance().getFirstProperty("UserDomainSeparator");
+        if (userDomainSeparator != null && !userDomainSeparator.trim().isEmpty()) {
+            DOMAIN_SEPARATOR = userDomainSeparator.trim();
+        } else {
+            DOMAIN_SEPARATOR = "/";
+        }
+    }
 
     public static final String NAME_COMBINER = "|";
 

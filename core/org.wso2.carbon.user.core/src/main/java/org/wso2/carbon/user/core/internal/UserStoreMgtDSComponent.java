@@ -21,9 +21,18 @@ package org.wso2.carbon.user.core.internal;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.base.api.ServerConfigurationService;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
+import org.wso2.carbon.user.api.RealmConfiguration;
 import org.wso2.carbon.user.api.UserStoreManager;
+import org.wso2.carbon.user.core.UserStoreConfigConstants;
+import org.wso2.carbon.user.core.claim.ClaimManager;
 import org.wso2.carbon.user.core.jdbc.JDBCUserStoreManager;
 import org.wso2.carbon.user.core.ldap.ActiveDirectoryUserStoreManager;
 import org.wso2.carbon.user.core.ldap.ReadOnlyLDAPUserStoreManager;
@@ -31,27 +40,24 @@ import org.wso2.carbon.user.core.ldap.ReadWriteLDAPUserStoreManager;
 import org.wso2.carbon.user.core.service.RealmService;
 import org.wso2.carbon.user.core.tracker.UserStoreManagerRegistry;
 import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
+import org.wso2.carbon.user.core.claim.ClaimManagerFactory;
 
-/**
- * @scr.component name="user.store.mgt.dscomponent" immediate=true
- * @scr.reference name="user.realmservice.default"
- * interface="org.wso2.carbon.user.core.service.RealmService" cardinality="1..1"
- * policy="dynamic" bind="setRealmService"
- * unbind="unsetRealmService"
- * @scr.reference name="server.configuration.service"
- * interface="org.wso2.carbon.base.api.ServerConfigurationService" cardinality="1..1"
- * policy="dynamic"  bind="setServerConfigurationService"
- * unbind="unsetServerConfigurationService"
- */
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+@Component(name = "user.store.mgt.dscomponent", immediate = true)
 public class UserStoreMgtDSComponent {
     private static Log log = LogFactory.getLog(UserStoreMgtDSComponent.class);
     private static RealmService realmService;
     private static ServerConfigurationService serverConfigurationService = null;
+    private static ClaimManagerFactory claimManagerFactory = null;
 
     public static RealmService getRealmService() {
         return realmService;
     }
 
+    @Reference(name = "user.realmservice.default", cardinality = ReferenceCardinality.MANDATORY, 
+            policy = ReferencePolicy.DYNAMIC, unbind = "unsetRealmService")
     protected void setRealmService(RealmService rlmService) {
         realmService = rlmService;
     }
@@ -60,11 +66,18 @@ public class UserStoreMgtDSComponent {
         return UserStoreMgtDSComponent.serverConfigurationService;
     }
 
+    @Reference(name = "server.configuration.service", cardinality = ReferenceCardinality.MANDATORY, 
+            policy = ReferencePolicy.DYNAMIC, unbind = "unsetServerConfigurationService")
     protected void setServerConfigurationService(ServerConfigurationService serverConfigurationService) {
         UserStoreMgtDSComponent.serverConfigurationService = serverConfigurationService;
     }
 
+    @Activate
     protected void activate(ComponentContext ctxt) {
+        if (Boolean.parseBoolean(System.getProperty("NonUserCoreMode"))) {
+            log.debug("UserCore component activated in NonUserCoreMode Mode");
+            return;
+        }
         try {
             // We assume this component gets activated by super tenant
             PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext
@@ -92,6 +105,7 @@ public class UserStoreMgtDSComponent {
         }
     }
 
+    @Deactivate
     protected void deactivate(ComponentContext ctxt) {
         if (log.isDebugEnabled()) {
             log.debug("Carbon UserStoreMgtDSComponent is deactivated ");
@@ -109,4 +123,65 @@ public class UserStoreMgtDSComponent {
         UserStoreMgtDSComponent.serverConfigurationService = null;
     }
 
+    public static ClaimManagerFactory getClaimManagerFactory() {
+        return UserStoreMgtDSComponent.claimManagerFactory;
+    }
+
+    @Reference(name = "claim.mgt.component", cardinality = ReferenceCardinality.OPTIONAL, 
+            policy = ReferencePolicy.DYNAMIC, unbind = "unsetClaimManagerFactory")
+    protected void setClaimManagerFactory(ClaimManagerFactory claimManagerFactory) {
+        this.claimManagerFactory = claimManagerFactory;
+        try {
+            if (claimManagerFactory.createClaimManager(MultitenantConstants.SUPER_TENANT_ID) != null) {
+                ClaimManager claimManager = claimManagerFactory.createClaimManager(MultitenantConstants.SUPER_TENANT_ID);
+                setClaimManager(realmService.getBootstrapRealm(), claimManager);
+                setClaimManager(realmService.getBootstrapRealm().getUserStoreManager(), claimManager);
+                RealmConfiguration secondaryRealmConfiguration = realmService.getBootstrapRealm()
+                        .getRealmConfiguration().getSecondaryRealmConfig();
+                if (secondaryRealmConfiguration != null) {
+                    do {
+                        String userDomain = secondaryRealmConfiguration.getUserStoreProperty(UserStoreConfigConstants
+                                .DOMAIN_NAME);
+                        setClaimManager(realmService.getBootstrapRealm().getUserStoreManager()
+                                .getSecondaryUserStoreManager(userDomain), claimManager);
+
+                        secondaryRealmConfiguration = secondaryRealmConfiguration.getSecondaryRealmConfig();
+                    } while (secondaryRealmConfiguration != null);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error while setting claim manager from claim manager factory");
+        }
+
+    }
+
+    protected void unsetClaimManagerFactory(ClaimManagerFactory claimManagerFactory) {
+        UserStoreMgtDSComponent.claimManagerFactory = null;
+    }
+
+    private void setClaimManager(Object object, ClaimManager claimManager) {
+        try {
+            Class<?> currentClass = object.getClass();
+            Method method = null;
+            while (currentClass != null && method == null) {
+                try {
+                    method = currentClass.getDeclaredMethod("setClaimManager", ClaimManager.class);
+                } catch (NoSuchMethodException e) {
+                    // method not present - try super class
+                    currentClass = currentClass.getSuperclass();
+                }
+            }
+            if (method != null) {
+                method.setAccessible(true);
+                method.invoke(object, claimManager);
+                log.info("Claim manager set for " + object.getClass());
+                method.setAccessible(false);
+            } else {
+                throw new NoSuchMethodException();
+            }
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            log.error("No claim manager setter found for " + object.getClass() + " or its supper classes");
+        }
+
+    }
 }

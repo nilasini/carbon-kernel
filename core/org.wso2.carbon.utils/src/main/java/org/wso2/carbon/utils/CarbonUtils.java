@@ -43,6 +43,7 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.wso2.carbon.CarbonConstants;
 import org.wso2.carbon.CarbonException;
+import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.carbon.base.CarbonBaseUtils;
 import org.wso2.carbon.base.ServerConfiguration;
 import org.wso2.carbon.base.api.ServerConfigurationService;
@@ -50,12 +51,14 @@ import org.wso2.carbon.context.CarbonContext;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.utils.component.xml.config.DeployerConfig;
 import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
+import org.wso2.carbon.utils.resolver.CarbonEntityResolver;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpSession;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
 import javax.xml.transform.TransformerException;
@@ -75,6 +78,7 @@ import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -92,6 +96,9 @@ public class CarbonUtils {
             "org.wso2.carbon.tomcat.ext.transport.ServletTransportManager";
 	private static final String TRUE = "true";
 	private static Log log = LogFactory.getLog(CarbonUtils.class);
+    private static final int ENTITY_EXPANSION_LIMIT = 0;
+    private static final String SECURITY_MANAGER_PROPERTY = org.apache.xerces.impl.Constants.XERCES_PROPERTY_PREFIX +
+            org.apache.xerces.impl.Constants.SECURITY_MANAGER_PROPERTY;
     private static boolean isServerConfigInitialized;
 
     public static boolean isAdminConsoleEnabled() {
@@ -249,16 +256,20 @@ public class CarbonUtils {
     }
 
 	public static String getCarbonCatalinaHome() {
-		String carbonCatalinaHomePath = System.getProperty(ServerConstants.CARBON_CATALINA_HOME);
-		if (carbonCatalinaHomePath == null) {
-			carbonCatalinaHomePath = System.getenv(CarbonConstants.CARBON_CATALINA_DIR_PATH_ENV);
-			if (carbonCatalinaHomePath == null) {
-				return getCarbonHome() + File.separator + "lib" + File.separator + "tomcat"
-						+ File.separator + "work" + File.separator + "Catalina";
-			}
-		}
-		return carbonCatalinaHomePath;
-
+        String carbonCatalinaHomePath;
+        String carbonInternalLibPath = System.getProperty(CarbonBaseConstants.CARBON_INTERNAL_LIB_DIR_PATH);
+        if (carbonInternalLibPath == null) {
+            carbonCatalinaHomePath = System.getProperty(ServerConstants.CARBON_CATALINA_HOME);
+            if (carbonCatalinaHomePath == null) {
+                carbonCatalinaHomePath = System.getenv(CarbonConstants.CARBON_CATALINA_DIR_PATH_ENV);
+                if (carbonCatalinaHomePath == null) {
+                    return Paths.get(getCarbonHome(), "lib", "tomcat", "work", "Catalina").toString();
+                }
+            }
+            return carbonCatalinaHomePath;
+        } else {
+            return Paths.get(carbonInternalLibPath, "tomcat", "work", "Catalina").toString();
+        }
 	}
 	
     public static String getCarbonTenantsDirPath() {
@@ -267,8 +278,7 @@ public class CarbonUtils {
             carbonTenantsDirPath = System.getenv(CarbonConstants.CARBON_TENANTS_DIR_PATH_ENV);
         }
         if (carbonTenantsDirPath == null) {
-            carbonTenantsDirPath = getCarbonHome() + File.separator + REPOSITORY +
-                    File.separator + "tenants";
+            carbonTenantsDirPath = Paths.get(getCarbonHome(), REPOSITORY, "tenants").toString();
         }
         return carbonTenantsDirPath;
     }
@@ -317,8 +327,17 @@ public class CarbonUtils {
     }
 
     public static String getCarbonOSGiDropinsDir() {
-        return getCarbonHome() + File.separator + REPOSITORY + File.separator +
-                "components" + File.separator + "dropins";
+        String dropinsPath = System.getProperty(CarbonBaseConstants.CARBON_DROPINS_DIR_PATH);
+        if (dropinsPath == null) {
+            String componentPath = System.getProperty(CarbonBaseConstants.CARBON_COMPONENTS_DIR_PATH);
+            if (componentPath == null) {
+                return Paths.get(getCarbonHome(), REPOSITORY, "components", "dropins").toString();
+            } else {
+                return Paths.get(componentPath, "dropins").toString();
+            }
+        } else {
+            return dropinsPath;
+        }
     }
 
     public static String getAxis2Repo() {
@@ -1071,16 +1090,11 @@ public class CarbonUtils {
      * @throws CarbonException
      */
     public static InputStream replaceSystemVariablesInXml(InputStream xmlConfiguration) throws CarbonException {
-        DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+
+        DocumentBuilderFactory documentBuilderFactory = getSecuredDocumentBuilder();
         DocumentBuilder documentBuilder;
         Document doc;
         try {
-            documentBuilderFactory.setNamespaceAware(true);
-            documentBuilderFactory.setExpandEntityReferences(false);
-            documentBuilderFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            SecurityManager securityManager = new SecurityManager();
-            securityManager.setEntityExpansionLimit(CarbonConstants.ENTITY_EXPANSION_LIMIT_0);
-            documentBuilderFactory.setAttribute(CarbonConstants.SECURITY_MANAGER_PROPERTY, securityManager);
             documentBuilder = documentBuilderFactory.newDocumentBuilder();
             documentBuilder.setEntityResolver(new CarbonEntityResolver());
             doc = documentBuilder.parse(xmlConfiguration);
@@ -1289,4 +1303,33 @@ public class CarbonUtils {
 		}
 		return proxyContextPath;
 	}
+
+    private static DocumentBuilderFactory getSecuredDocumentBuilder() {
+
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        dbf.setXIncludeAware(false);
+        dbf.setExpandEntityReferences(false);
+        try {
+            dbf.setFeature(org.apache.xerces.impl.Constants.SAX_FEATURE_PREFIX +
+                    org.apache.xerces.impl.Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE, false);
+            dbf.setFeature(org.apache.xerces.impl.Constants.SAX_FEATURE_PREFIX +
+                    org.apache.xerces.impl.Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE, false);
+            dbf.setFeature(org.apache.xerces.impl.Constants.XERCES_FEATURE_PREFIX +
+                    org.apache.xerces.impl.Constants.LOAD_EXTERNAL_DTD_FEATURE, false);
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        } catch (ParserConfigurationException e) {
+            log.error(
+                    "Failed to load XML Processor Feature " +
+                            org.apache.xerces.impl.Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE + " or " +
+                            org.apache.xerces.impl.Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE + " or " +
+                            org.apache.xerces.impl.Constants.LOAD_EXTERNAL_DTD_FEATURE);
+        }
+
+        SecurityManager securityManager = new SecurityManager();
+        securityManager.setEntityExpansionLimit(ENTITY_EXPANSION_LIMIT);
+        dbf.setAttribute(org.apache.xerces.impl.Constants.XERCES_PROPERTY_PREFIX +
+                org.apache.xerces.impl.Constants.SECURITY_MANAGER_PROPERTY, securityManager);
+        return dbf;
+    }
 }

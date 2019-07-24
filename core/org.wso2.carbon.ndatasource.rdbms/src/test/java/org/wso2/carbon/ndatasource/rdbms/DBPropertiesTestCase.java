@@ -33,9 +33,10 @@ public class DBPropertiesTestCase {
 
     @Test
     public void modifyDBConfig() throws DataSourceException {
+        System.setProperty("javax.xml.bind.JAXBContextFactory", "com.sun.xml.bind.v2.ContextFactory");
         RDBMSConfiguration configuration = new RDBMSConfiguration();
-        List<RDBMSConfiguration.DatabaseProperty> propertyList = new ArrayList<>();
-        RDBMSConfiguration.DatabaseProperty property = new RDBMSConfiguration.DatabaseProperty();
+        List<RDBMSConfiguration.DataSourceProperty> propertyList = new ArrayList<>();
+        RDBMSConfiguration.DataSourceProperty property = new RDBMSConfiguration.DataSourceProperty();
         property.setName("SetFloatAndDoubleUseBinary");
         property.setValue("true");
         propertyList.add(property);

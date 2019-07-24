@@ -21,13 +21,18 @@ package org.wso2.carbon.tomcat.internal;
 import org.apache.catalina.LifecycleException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.xerces.impl.Constants;
+import org.apache.xerces.util.SecurityManager;
 import org.w3c.dom.*;
+import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.securevault.SecretResolver;
 import org.wso2.securevault.SecretResolverFactory;
 import org.wso2.securevault.SecurityConstants;
+import org.wso2.securevault.commons.MiscellaneousUtil;
 import org.wso2.securevault.secret.SecretManager;
 import org.xml.sax.SAXException;
 
+import javax.naming.Context;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -36,6 +41,7 @@ import javax.xml.transform.*;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.*;
+import java.nio.file.Paths;
 
 /**
  * Configuring,initialization and stopping the carbon tomcat instance
@@ -48,49 +54,74 @@ public class ServerManager {
     private SecretResolver resolver;
     static ClassLoader bundleCtxtClassLoader;
     private static final String SVNS = "svns";
+    private static final String CARBON_URL_CONTEXT_FACTORY_PKG_PREFIX = "org.wso2.carbon.tomcat.jndi";
+    private static final int ENTITY_EXPANSION_LIMIT = 0;
 
 
     /**
      * initialization code goes here.i.e : configuring tomcat instance using catalina-server.xml
      */
     public void init() {
+
         bundleCtxtClassLoader = Thread.currentThread().getContextClassLoader();
-        String carbonHome = System.getProperty("carbon.home");
-        String catalinaHome = new File(carbonHome).getAbsolutePath() + File.separator + "lib" +
-                File.separator + "tomcat";
-        String catalinaXML = new File(carbonHome).getAbsolutePath() + File.separator +
-                "repository" + File.separator + "conf" + File.separator +
-                "tomcat" + File.separator + "catalina-server.xml";
+        String carbonHome = System.getProperty(CarbonBaseConstants.CARBON_HOME);
+        String catalinaHome;
+        String configPath = System.getProperty(CarbonBaseConstants.CARBON_CONFIG_DIR_PATH);
+        String catalinaXML;
+        if (configPath == null) {
+            catalinaXML = Paths.get(carbonHome, "repository", "conf", "tomcat", "catalina-server.xml").toString();
+        } else {
+            catalinaXML = Paths.get(configPath, "tomcat", "catalina-server.xml").toString();
+        }
         try {
             inputStream = new FileInputStream(new File(catalinaXML));
         } catch (FileNotFoundException e) {
             log.error("could not locate the file catalina-server.xml", e);
         }
-        //setting catalina.base system property. tomcat configurator refers this property while tomcat instance creation.
+        //setting catalina.base system property. tomcat configurator refers this property while tomcat instance
+        // creation.
         //you can override the property in wso2server.sh
-        if (System.getProperty("catalina.base") == null) {
-            System.setProperty("catalina.base", System.getProperty("carbon.home") + File.separator +
-                    "lib" + File.separator + "tomcat");
+        String internalLibPath = System.getProperty(CarbonBaseConstants.CARBON_INTERNAL_LIB_DIR_PATH);
+        if (internalLibPath == null) {
+            if (System.getProperty("catalina.base") == null) {
+                System.setProperty("catalina.base", Paths.get(carbonHome, "lib", "tomcat").toString());
+            }
+            catalinaHome = Paths.get(carbonHome, "lib", "tomcat").toString();
+        } else {
+            System.setProperty("catalina.base", Paths.get(internalLibPath, "tomcat").toString());
+            catalinaHome = Paths.get(internalLibPath, "tomcat").toString();
         }
+
+        String value = CARBON_URL_CONTEXT_FACTORY_PKG_PREFIX;
+        String oldValue = System.getProperty(Context.URL_PKG_PREFIXES);
+        if (oldValue != null) {
+            if (oldValue.contains(CARBON_URL_CONTEXT_FACTORY_PKG_PREFIX)) {
+                value = oldValue;
+            } else {
+                value = CARBON_URL_CONTEXT_FACTORY_PKG_PREFIX + ":" + oldValue;
+            }
+        }
+        System.setProperty(Context.URL_PKG_PREFIXES, value);
 
         tomcat = new CarbonTomcat();
 
-        if(SecretManager.getInstance().isInitialized()){
+        Element config = inputStreamToDOM(inputStream);
+        if (SecretManager.getInstance().isInitialized()) {
             //creates DOM from input stream
-            Element config = inputStreamToDOM(inputStream);
             //creates Secret resolver
             resolver = SecretResolverFactory.create(config, true);
             //resolves protected passwords
             resolveSecuredConfig(config, null);
-            config.getAttributes()
-                  .removeNamedItem(XMLConstants.XMLNS_ATTRIBUTE + SecurityConstants.NS_SEPARATOR + SVNS);
-            // creates new input stream from processed DOM element
-            InputStream newStream = domToInputStream(config);
-            
-            tomcat.configure(catalinaHome, newStream);
-        } else {
-            tomcat.configure(catalinaHome, inputStream);    
         }
+        if (config.getAttributes().getNamedItem(XMLConstants.XMLNS_ATTRIBUTE + SecurityConstants.NS_SEPARATOR +
+                SVNS) != null) {
+            config.getAttributes().removeNamedItem(XMLConstants.XMLNS_ATTRIBUTE + SecurityConstants.NS_SEPARATOR +
+                    SVNS);
+        }
+        // creates new input stream from processed DOM element
+        InputStream newStream = domToInputStream(config);
+
+        tomcat.configure(catalinaHome, newStream);
     }
 
     /**
@@ -153,13 +184,25 @@ public class ServerManager {
         if (nodeMap != null) {
             for (int j = 0; j < nodeMap.getLength(); j++) {
                 Node node = nodeMap.item(j);
-                if(node != null){
-                    String attributeName = node.getNodeName();
-                    token = tempToken + "." + attributeName;
-                    if(resolver.isTokenProtected(token)){
-                        node.setNodeValue(resolver.resolve(token));
-                        nodeMap.removeNamedItem(
-                                SVNS + SecurityConstants.NS_SEPARATOR + SecurityConstants.SECURE_VAULT_ALIAS);
+                if (node != null) {
+                    String alias = MiscellaneousUtil.getProtectedToken(node.getNodeValue());
+                    if (alias != null && alias.length() > 0) {
+                        node.setNodeValue(MiscellaneousUtil.resolve(alias, resolver));
+                    } else {
+                        String attributeName = node.getNodeName();
+                        token = tempToken + "." + attributeName;
+                        if (resolver.isTokenProtected(token)) {
+                            node.setNodeValue(resolver.resolve(token));
+                            try {
+                                nodeMap.removeNamedItem(
+                                        SVNS + SecurityConstants.NS_SEPARATOR + SecurityConstants.SECURE_VAULT_ALIAS);
+                            } catch (DOMException e) {
+                                String msg =
+                                        "Error while removing " + SVNS + SecurityConstants.NS_SEPARATOR + SecurityConstants.SECURE_VAULT_ALIAS;
+                                // log is ignored
+                                log.debug(msg, e);
+                            }
+                        }
                     }
                 }
             }
@@ -179,7 +222,7 @@ public class ServerManager {
      */
     public static Element inputStreamToDOM(InputStream inputStream) {
 
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilderFactory factory = getSecuredDocumentBuilder();
         DocumentBuilder docBuilder;
         Document doc;
         Element element = null;
@@ -205,6 +248,29 @@ public class ServerManager {
         }
 
         return element;
+    }
+
+    private static DocumentBuilderFactory getSecuredDocumentBuilder() {
+
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        dbf.setXIncludeAware(false);
+        dbf.setExpandEntityReferences(false);
+        try {
+            dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE, false);
+            dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE, false);
+            dbf.setFeature(Constants.XERCES_FEATURE_PREFIX + Constants.LOAD_EXTERNAL_DTD_FEATURE, false);
+        } catch (ParserConfigurationException e) {
+            log.error(
+                    "Failed to load XML Processor Feature " + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE + " or " +
+                            Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE + " or " + Constants.LOAD_EXTERNAL_DTD_FEATURE);
+        }
+
+        SecurityManager securityManager = new SecurityManager();
+        securityManager.setEntityExpansionLimit(ENTITY_EXPANSION_LIMIT);
+        dbf.setAttribute(Constants.XERCES_PROPERTY_PREFIX + Constants.SECURITY_MANAGER_PROPERTY, securityManager);
+
+        return dbf;
     }
 
     /**

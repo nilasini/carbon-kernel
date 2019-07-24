@@ -30,6 +30,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.net.URLStreamHandlerFactory;
+import java.nio.file.Paths;
 import java.security.AllPermission;
 import java.security.CodeSource;
 import java.security.Permission;
@@ -168,7 +169,14 @@ public class EquinoxFrameworkLauncher implements FrameworkLauncher {
         platformDirectory = getCarbonComponentRepo();
 
         File plugins = new File(platformDirectory, "plugins");
-        File patchesDir = new File(platformDirectory, "patches");
+
+        File patchesDir;
+        String patchesPath = System.getProperty("carbon.patches.dir.path");
+        if (patchesPath == null) {
+            patchesDir = new File(platformDirectory, "patches");
+        } else {
+            patchesDir = new File(patchesPath);
+        }
 //
         File dropinsFolder = new File(platformDirectory, "dropins");
         //copying resources inside patches folder to the work area.
@@ -429,17 +437,14 @@ public class EquinoxFrameworkLauncher implements FrameworkLauncher {
      * @param target           - Location to extract
      */
     protected void extractResource(String compressFilePath, File target) {
-        try {
+        try (ZipInputStream zipinputstream = new ZipInputStream(context.getResourceAsStream(compressFilePath))) {
             byte[] buf = new byte[1024];
-            ZipInputStream zipinputstream;
             ZipEntry zipentry;
-            zipinputstream = new ZipInputStream(context.getResourceAsStream(compressFilePath));
 
             zipentry = zipinputstream.getNextEntry();
             while (zipentry != null) {
                 String entryName = zipentry.getName();
                 int n;
-                FileOutputStream fileoutputstream;
                 File newFile = new File(entryName);
                 String directory = newFile.getParent();
 
@@ -460,20 +465,16 @@ public class EquinoxFrameworkLauncher implements FrameworkLauncher {
                 if (outputFile.getParentFile() != null && !outputFile.getParentFile().mkdirs()) {
                     throw new IOException("Fail to create the directory: " + outputFile.getParentFile().getAbsolutePath());
                 }
-                fileoutputstream = new FileOutputStream(outputFile);
-
-                while ((n = zipinputstream.read(buf, 0, 1024)) > -1)
-                    fileoutputstream.write(buf, 0, n);
-
-                fileoutputstream.close();
+                try (FileOutputStream fileoutputstream = new FileOutputStream(outputFile)) {
+                    while ((n = zipinputstream.read(buf, 0, 1024)) > -1) {
+                        fileoutputstream.write(buf, 0, n);
+                    }
+                }
                 zipinputstream.closeEntry();
                 zipentry = zipinputstream.getNextEntry();
 
             }
-
-            zipinputstream.close();
-        }
-        catch (Exception ignored) {
+        } catch (Exception ignored) {
             //ignore invalid compress file
             context.log(ignored.getMessage(), ignored);
         }
@@ -720,14 +721,18 @@ public class EquinoxFrameworkLauncher implements FrameworkLauncher {
     }
 
     private File getCarbonComponentRepo() {
-        String carbonRepo = System.getenv("CARBON_REPOSITORY");
-        if (carbonRepo == null) {
-            carbonRepo = System.getProperty("carbon.repository");
+        String carbonComponentsRepository;
+        carbonComponentsRepository = System.getProperty("carbon.components.dir.path");
+        if (carbonComponentsRepository == null) {
+            String carbonRepo = System.getenv("CARBON_REPOSITORY");
+            if (carbonRepo == null) {
+                carbonRepo = System.getProperty("carbon.repository");
+            }
+            if (carbonRepo == null) {
+                carbonRepo = Paths.get(System.getProperty("carbon.home") ,"repository").toString();
+            }
+            carbonComponentsRepository = Paths.get(carbonRepo,"components").toString();
         }
-        if (carbonRepo == null) {
-            carbonRepo = System.getProperty("carbon.home") + File.separator + "repository";
-        }
-        String carbonComponentsRepository = carbonRepo + File.separator + "components";
         File componentRepo = new File(carbonComponentsRepository);
         if (!componentRepo.exists() && !componentRepo.mkdirs()) {
             System.err.println("Fail to create the directory: " + componentRepo.getAbsolutePath());

@@ -26,6 +26,7 @@
 <%@page import="java.io.PrintWriter" %>
 <%@page import="java.io.StringWriter" %>
 <%@ page import="java.util.ArrayList" %>
+<%@ page import="org.owasp.encoder.Encode" %>
 <%@ page import="org.wso2.carbon.ui.util.CharacterEncoder" %>
 <carbon:breadcrumb
         label="error.occurred"
@@ -103,7 +104,7 @@
             } else {
             %>
             <tr>
-                <td><b><%=carbonMessage.getMessage()%></b></td>
+                <td><b><%=Encode.forHtml(carbonMessage.getMessage())%></b></td>
             </tr>
             <tr>
                 <td>
@@ -111,9 +112,9 @@
 	                    StringWriter sw = new StringWriter();
 	                    PrintWriter pw = new PrintWriter(sw);
                     	if(carbonMessage.isShowStackTrace()){
-                    	    pw.write("<b>The following error details are available. Please refer logs for more details.</b><br/>");
-                            e.printStackTrace(pw);
-                            String errorStr = sw.toString();
+                    	    pw.format("%s - An error has occurred. Please refer the logs for more details.",
+                                    e.getLocalizedMessage());
+                            String errorStr = Encode.forHtml(sw.toString());
                             errorStr = errorStr.replaceAll("\n", "<br/>");
                             for (int i = 0; i < errorStr.length(); i++) {
                                 out.write(errorStr.charAt(i));
@@ -132,7 +133,7 @@
             } else {
             %>
             <tr>
-                <td><b><%=carbonMessage.getMessage()%>
+                <td><b><%=Encode.forHtml(carbonMessage.getMessage())%>
                 </b></td>
             </tr>
             <%
@@ -168,7 +169,7 @@
      for(int a = 0;a < errors.length;a++){
 
     %>
-<li><%=errors[a]%>
+<li><%=Encode.forHtml(errors[a])%>
 </li>
 <%
     }

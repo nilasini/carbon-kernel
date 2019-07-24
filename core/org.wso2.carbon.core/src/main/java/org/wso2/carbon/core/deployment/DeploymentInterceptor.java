@@ -209,7 +209,9 @@ public class DeploymentInterceptor implements AxisObserver {
 
                     log.info("Removing Axis2 Service: " + axisService.getName() +
                              getTenantIdAndDomainString());
-                    deleteServiceResource(axisService);
+                    if (!keepHistory(axisService)) {
+                        deleteServiceResource(axisService);
+                    }
                 }
             } catch (Exception e) {
                 String msg = "Exception occurred while handling service update event." +
@@ -325,10 +327,47 @@ public class DeploymentInterceptor implements AxisObserver {
                     }
                 }
 
+                // check whether the module is globally engaged
+                boolean globallyEngaged = getPersistedModuleGloballyEngagedStatus(axisModule);
+                if (globallyEngaged) {
+                    axisModule.addParameter(new Parameter(RegistryResources.ModuleProperties.GLOBALLY_ENGAGED,
+                                                          Boolean.TRUE.toString()));
+                    axisModule.getParent().engageModule(axisModule);
+                }
             }
+        } catch (AxisFault axisFault) {
+            log.error("Failed to globally engage the module: " + axisModule.getName(), axisFault);
         } finally {
             PrivilegedCarbonContext.endTenantFlow();
         }
+    }
+
+    /**
+     * This method reads the module globally engaged status from the registry
+     * @param axisModule
+     * @return
+     */
+    private boolean getPersistedModuleGloballyEngagedStatus(AxisModule axisModule) {
+        boolean globallyEngagedModule = false;
+        String moduleResourcePath = getModuleResourcePath(axisModule);
+
+        try {
+            if (registry.resourceExists(moduleResourcePath)) {
+                Resource moduleResource = registry.get(moduleResourcePath);
+                if (moduleResource.getProperty(RegistryResources.ModuleProperties.GLOBALLY_ENGAGED) != null) {
+                    globallyEngagedModule = Boolean.valueOf(moduleResource.getProperty(
+                            RegistryResources.ModuleProperties.GLOBALLY_ENGAGED));
+                }
+            }
+        } catch (org.wso2.carbon.registry.core.exceptions.RegistryException e) {
+            log.error("Failed to read persisted module globally engaged status.", e);
+        }
+
+        return globallyEngagedModule;
+    }
+
+    private String getModuleResourcePath(AxisModule axisModule) {
+        return RegistryResources.MODULES + axisModule.getName() + "/" + axisModule.getVersion();
     }
 
     public void addParameter(Parameter parameter) throws AxisFault {
@@ -513,6 +552,15 @@ public class DeploymentInterceptor implements AxisObserver {
         }
 
         return false;
+    }
+
+    private boolean keepHistory(AxisService axisService) {
+        Parameter keepHistoryParam = axisService.getParameter(CarbonConstants.KEEP_SERVICE_HISTORY_PARAM);
+        if (keepHistoryParam == null) {
+            return false;
+        }
+        Object value = keepHistoryParam.getValue();
+        return (value instanceof String && Boolean.valueOf((String) value));
     }
 
 

@@ -718,6 +718,12 @@ public final class AppDeployerUtils {
 
         while (entries.hasMoreElements()) {
             ZipEntry entry = (ZipEntry) entries.nextElement();
+            String canonicalEntryPath = new File(destPath + entry.getName()).getCanonicalPath();
+            String canonicalDirPath = new File(destPath).getCanonicalPath();
+            if(!canonicalEntryPath.startsWith(canonicalDirPath)){
+                throw new DeploymentException("Entry is outside of the target dir: " + entry.getName());
+            }
+
             // we don't need to copy the META-INF dir
             if (entry.getName().startsWith("META-INF/")) {
                 continue;
@@ -755,8 +761,7 @@ public final class AppDeployerUtils {
                 AppDeployerConstants.META_FILE_POSTFIX;
         File metaFile = new File(metaFilePath);
         if (metaFile.exists()) {
-            try {
-                FileInputStream fis = new FileInputStream(metaFile);
+            try (FileInputStream fis = new FileInputStream(metaFile)) {
                 OMElement docElement = new StAXOMBuilder(fis).getDocumentElement();
                 OMElement mediaTypeElement = docElement
                         .getFirstChildWithName(new QName(AppDeployerConstants.META_MEDIA_TYPE));

@@ -68,7 +68,8 @@ public class CarbonAuthenticationUtil {
         Date currentTime = Calendar.getInstance().getTime();
         SimpleDateFormat date = new SimpleDateFormat("'['yyyy-MM-dd HH:mm:ss,SSSZ']'");
 
-        String msg = "Failed Administrator login attempt \'" + username + "[" + tenantId + "]\' at "
+        //error msg to be displayed for an non-admin user login
+        String msg = "Login failed. Unauthorized login attempt \'" + username + "[" + tenantId + "]\' at "
                    + date.format(currentTime);
         if(!CarbonUtils.isRunningOnLocalTransportMode()){
            msg +=  " from IP address " + remoteAddress;
@@ -87,22 +88,7 @@ public class CarbonAuthenticationUtil {
     public static void onSuccessAdminLogin(HttpSession httpSess, String username, int tenantId,
             String tenantDomain, String remoteAddress) throws Exception {
 
-        //read the domain name of the user store that the user belongs to and set it to the user name,
-        //a domain name is not already appended
-        String domain = UserCoreUtil.getDomainFromThreadLocal();
-        String userNameWithDomain = null;
-        int index = username.indexOf(CarbonConstants.DOMAIN_SEPARATOR);
-        if (index < 0) {
-            if (domain != null) {
-                userNameWithDomain = domain + CarbonConstants.DOMAIN_SEPARATOR + username;
-            } else {
-                userNameWithDomain = username;
-            }
-        } else {
-            userNameWithDomain = username;
-        }
-
-        initializeLoggedInUserRegistry(httpSess, userNameWithDomain, tenantId, tenantDomain);
+        initializeLoggedInUserRegistry(httpSess, username, tenantId, tenantDomain);
 
         Date currentTime = Calendar.getInstance().getTime();
         SimpleDateFormat date = new SimpleDateFormat("'['yyyy-MM-dd HH:mm:ss,SSSZ']'");

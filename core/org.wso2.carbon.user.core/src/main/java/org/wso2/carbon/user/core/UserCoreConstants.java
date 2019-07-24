@@ -17,6 +17,8 @@
 */
 package org.wso2.carbon.user.core;
 
+import org.wso2.carbon.base.ServerConfiguration;
+
 public class UserCoreConstants {
 
     public static final String DATA_SOURCE = "um.datasource";
@@ -30,6 +32,7 @@ public class UserCoreConstants {
     public static final short BEHAVIOUR_HIDDEN = 1;
     public static final short BEHAVIOUR_OVERRIDDEN = 2;
 
+    public static final String INTERNAL_USERSTORE = "Internal";
     public static final String EXTERNAL_USERSTORE = "External";
 
     public static final String DELEGATING_REALM = "Delegating";
@@ -45,6 +48,7 @@ public class UserCoreConstants {
 
     public static final String SYSTEM_RESOURCE = "System";
     public static final String MSSQL_TYPE = "mssql";
+    public static final String MYSQL_TYPE = "mysql";
     public static final String OPENEDGE_TYPE = "openedge";
 
     /*To hold a boolean property to track the first startup of the server.*/
@@ -53,8 +57,7 @@ public class UserCoreConstants {
     public static final int MAX_USER_ROLE_LIST = 100;
     public static final int MAX_SEARCH_TIME = 10000;   // ms
 
-    public static final String INTERNAL_DOMAIN = "INTERNAL";
-    public static final String APPLICATION_DOMAIN = "Application";
+    public static final String INTERNAL_DOMAIN = "Internal";
     public static final String PRIMARY_DEFAULT_DOMAIN_NAME = "PRIMARY";
     public static final String SYSTEM_DOMAIN_NAME = "SYSTEM";
 
@@ -62,13 +65,22 @@ public class UserCoreConstants {
 
     public static final String IS_USER_IN_ROLE_CACHE_IDENTIFIER = "@__isUserHasTheRole__@";
 
-    public static final String DOMAIN_SEPARATOR = "/";
+    public static final String DOMAIN_SEPARATOR;
+
+    static {
+        String userDomainSeparator = ServerConfiguration.getInstance().getFirstProperty("UserDomainSeparator");
+        if (userDomainSeparator != null && !userDomainSeparator.trim().isEmpty()) {
+            DOMAIN_SEPARATOR = userDomainSeparator.trim();
+        } else {
+            DOMAIN_SEPARATOR = "/";
+        }
+    }
 
     public static final String PRINCIPAL_USERNAME_SEPARATOR = "_";
 
     public static final String SHARED_ROLE_TENANT_SEPERATOR = "@SharedRoleSeperator@";
 
-    public static final String NAME_COMBINER = "|";
+    public static final String NAME_COMBINER = "$_USERNAME_SEPARATOR_$";
 
     public static final String TENANT_DOMAIN_COMBINER = "@";
 
@@ -98,8 +110,6 @@ public class UserCoreConstants {
     public static final String USER_LOCKED = "true";
     public static final String USER_UNLOCKED = "false";
 
-    public static final String SHA_1_PRNG = "SHA1PRNG";
-
     public static final class RealmConfig {
         public static final String LOCAL_NAME_USER_MANAGER = "UserManager";
         public static final String LOCAL_NAME_REALM = "Realm";
@@ -119,6 +129,8 @@ public class UserCoreConstants {
         public static final String LOCAL_NAME_EVERYONE_ROLE = "EveryOneRoleName";
         public static final String LOCAL_NAME_ANONYMOUS_USER = "AnonymousUser";
         public static final String LOCAL_PASSWORDS_EXTERNALLY_MANAGED = "PasswordsExternallyManaged";
+        public static final String OVERRIDE_USERNAME_CLAIM_FROM_INTERNAL_USERNAME =
+                "OverrideUsernameClaimFromInternalUsername";
         public static final String ATTR_NAME_CLASS = "class";
         public static final String ATTR_NAME_PROP_NAME = "name";
         public static final String PROPERTY_EVERYONEROLE_AUTHORIZATION = "EveryoneRoleManagementPermissions";
@@ -130,6 +142,7 @@ public class UserCoreConstants {
         public static final String PROPERTY_IS_USERS_OF_ROLE_LISTING = "IsUsersOfRoleListing";
         public static final String PROPERTY_READ_ONLY = "ReadOnly";
         public static final String CLASS_DESCRIPTION = "Description";
+        public static final String PROPERTY_PRESERVE_CASE_FOR_RESOURCES = "PreserveCaseForResources";
 
         public static final String EMAIL_VALIDATION_REGEX = "^([a-zA-Z0-9_\\.\\-])+\\@(([a-zA-Z0-9\\-])+\\.)+([a-zA-Z0-9]{2,4})+$";
 
@@ -153,19 +166,20 @@ public class UserCoreConstants {
 
         public static final String PROPERTY_JAVA_REG_EX = "PasswordJavaRegEx";
         public static final String PROPERTY_JS_REG_EX = "PasswordJavaScriptRegEx";
-        public static final String PROPERTY_PASSWORD_ERROR_MSG = "PasswordJavaRegExViolationErrorMsg";
-        public static final String PROPERTY_USERNAME_ERROR_MSG = "UsernameJavaRegExViolationErrorMsg";
 
         public static final String PROPERTY_USER_NAME_JAVA_REG_EX = "UsernameJavaRegEx";
+        public static final String PROPERTY_USER_NAME_JAVA_REG = "UserNameJavaRegEx";
         public static final String PROPERTY_USER_NAME_JS_REG_EX = "UsernameJavaScriptRegEx";
+        public static final String PROPERTY_USER_NAME_JS_REG = "UserNameJavaScriptRegEx";
+        public static final String PROPERTY_USER_NAME_WITH_EMAIL_JS_REG_EX = "UsernameWithEmailJavaScriptRegEx";
 
         public static final String PROPERTY_ROLE_NAME_JAVA_REG_EX = "RolenameJavaRegEx";
         public static final String PROPERTY_ROLE_NAME_JS_REG_EX = "RolenameJavaScriptRegEx";
 
         public static final String PROPERTY_EXTERNAL_IDP = "ExternalIdP";
 
-        public static final String PROPERTY_KDC_ENABLED = "KDCEnabled";
-        public static final String DEFAULT_REALM_NAME = "DefaultRealmName";
+        public static final String PROPERTY_KDC_ENABLED = "kdcEnabled";
+        public static final String DEFAULT_REALM_NAME = "defaultRealmName";
 
         public static final String PROPERTY_SCIM_ENABLED = "SCIMEnabled";
 
@@ -174,6 +188,8 @@ public class UserCoreConstants {
 
         //configuration to enable or disable authorization caching
         public static final String PROPERTY_AUTHORIZATION_CACHE_ENABLED = "AuthorizationCacheEnabled";
+
+        public static final String PROPERTY_CASE_SENSITIVITY = "CaseSensitiveAuthorizationRules";
 
         //configuration to identify the cache uniquely
         public static final String PROPERTY_USER_CORE_CACHE_IDENTIFIER = "UserCoreCacheIdentifier";
@@ -199,9 +215,8 @@ public class UserCoreConstants {
 
         public static final String SHARED_GROUPS_ENABLED = "SharedGroupEnabled";
         public static final String DOMAIN_NAME_XPATH = "//UserStoreManager/Property[@name='DomainName']";
-        public static final String LDAP_READ_TIMEOUT = "ReadTimeout";
-        public static final String READ_TIME_EXCEEDED = "LDAPReadTimeoutExceeded";
-        public static final String RETRY_ATTEMPTS = "RetryAttempts";
+        public static final String LEADING_OR_TRAILING_SPACE_ALLOWED_IN_USERNAME =
+                "LeadingOrTrailingSpaceAllowedInUserName";
     }
 
     public static final class ClaimTypeURIs {
@@ -227,7 +242,6 @@ public class UserCoreConstants {
         public static final String ACCOUNT_STATUS = IDENTITY_CLAIM_URI + "/accountLock";
         public static final String CHALLENGE_QUESTION_URI = IDENTITY_CLAIM_URI + "/challengeQuestion";
         public static final String TEMPORARY_EMAIL_ADDRESS = DEFAULT_CARBON_DIALECT + "/temporaryemailaddress";
-        public static final String DISPLAY_NAME = DEFAULT_CARBON_DIALECT + "/displayName";
     }
 
     public static final class TenantMgtConfig {

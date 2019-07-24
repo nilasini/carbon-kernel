@@ -24,7 +24,6 @@ import org.apache.axiom.om.impl.builder.StAXOMBuilder;
 import org.apache.axiom.om.util.AXIOMUtil;
 import org.apache.axiom.om.xpath.AXIOMXPath;
 import org.apache.axis2.engine.AxisConfiguration;
-import org.apache.axis2.deployment.DeploymentException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.CarbonConstants;
@@ -45,7 +44,13 @@ import org.wso2.carbon.roles.mgt.ServerRoleConstants;
 import org.wso2.carbon.roles.mgt.ServerRoleUtils;
 
 import javax.xml.namespace.QName;
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -291,9 +296,6 @@ public class CarbonAppPersistenceManager {
                     pathMappingResource.setContent(element.toString());
                     configRegistry.put(AppDeployerConstants.REG_PATH_MAPPING +
                             regConfig.getAppName(), pathMappingResource);
-                    } else if (actualResourcePath == null) {
-                        String msg = "Error while deploying registry resource";
-                        throw new DeploymentException(msg);
                 }
             }
         }
@@ -313,11 +315,12 @@ public class CarbonAppPersistenceManager {
                 continue;
             }
             // .dump file is a zip, so create a ZipInputStream
-            ZipInputStream zis = new ZipInputStream(new FileInputStream(file));
-            zis.getNextEntry();
-            Reader reader = new InputStreamReader(zis);
-            if (reg != null) {
-                reg.restore(dump.getPath(), reader);
+            try (ZipInputStream zis = new ZipInputStream(
+                    new FileInputStream(file)); Reader reader = new InputStreamReader(zis)) {
+                zis.getNextEntry();
+                if (reg != null) {
+                    reg.restore(dump.getPath(), reader);
+                }
             }
         }
 
@@ -478,7 +481,7 @@ public class CarbonAppPersistenceManager {
                         new StAXOMBuilder(xmlStream).getDocumentElement());
             }
         }
-        if (regConfig != null){
+        if (regConfig != null) {
             regConfig.setAppName(appName);
         }
         return regConfig;

@@ -17,6 +17,8 @@
 */
 package org.wso2.carbon.server.extensions;
 
+import org.apache.xerces.impl.Constants;
+import org.apache.xerces.util.SecurityManager;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -26,13 +28,18 @@ import org.wso2.carbon.server.util.Utils;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.InputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -42,11 +49,30 @@ import java.util.zip.ZipInputStream;
  */
 public class AxisServiceDeployerBundleCreator implements CarbonLaunchExtension {
 
-    private static final String DEPLOYERS_DIR =
-            "repository" + File.separator + "components" + File.separator + "axis2deployers";
+    private static final String DEPLOYERS_DIR;
+
+    static {
+        String componentsPath = System.getProperty(LauncherConstants.CARBON_COMPONENTS_DIR_PATH);
+        if (componentsPath != null) {
+            Path path = Paths.get(componentsPath,"axis2deployers");
+            DEPLOYERS_DIR =  Paths.get(System.getProperty(LauncherConstants.CARBON_HOME)).relativize(path).toString();
+        } else {
+            DEPLOYERS_DIR = Paths.get("repository" , "components" , "axis2deployers").toString();
+        }
+    }
+
+    private static final Logger logger= Logger.getLogger(AxisServiceDeployerBundleCreator.class.getName());
+
+    private static final int ENTITY_EXPANSION_LIMIT = 0;
 
     public void perform() {
-        File dropinsFolder = new File(Utils.getCarbonComponentRepo(), "dropins");
+        String dropinsPath = System.getProperty(LauncherConstants.CARBON_DROPINS_DIR_PATH);
+        File dropinsFolder;
+        if (dropinsPath == null) {
+            dropinsFolder = new File(Utils.getCarbonComponentRepo(), "dropins");
+        } else {
+            dropinsFolder = new File(dropinsPath);
+        }
         File dir = Utils.getBundleDirectory(DEPLOYERS_DIR);
         File[] files = dir.listFiles(new Utils.JarFileFilter());
         if (files != null) {
@@ -63,7 +89,7 @@ public class AxisServiceDeployerBundleCreator implements CarbonLaunchExtension {
                         entryName = entry.getName();
                         if (entryName.equals("META-INF/component.xml")) {
                             URL url = new URL("jar:file:" + file.getAbsolutePath() + "!/" + entryName);
-                            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+                            DocumentBuilderFactory dbf = getSecuredDocumentBuilder();
                             DocumentBuilder db = dbf.newDocumentBuilder();
                             Document doc = db.parse(url.openStream());
                             doc.getDocumentElement().normalize();
@@ -106,7 +132,9 @@ public class AxisServiceDeployerBundleCreator implements CarbonLaunchExtension {
                 } finally {
                     try {
                         //close the Stream
-                        zin.close();
+                        if (zin != null) {
+                            zin.close();
+                        }
                     } catch (IOException e) {
                         System.out.println("Unable to close the InputStream " + e.getMessage());
                         e.printStackTrace();
@@ -115,4 +143,27 @@ public class AxisServiceDeployerBundleCreator implements CarbonLaunchExtension {
             }
         }
     }
+    private static DocumentBuilderFactory getSecuredDocumentBuilder() {
+
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        dbf.setXIncludeAware(false);
+        dbf.setExpandEntityReferences(false);
+        try {
+            dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE, false);
+            dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE, false);
+            dbf.setFeature(Constants.XERCES_FEATURE_PREFIX + Constants.LOAD_EXTERNAL_DTD_FEATURE, false);
+        } catch (ParserConfigurationException e) {
+            logger.log(Level.SEVERE,"Failed to load XML Processor Feature " + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE + " or " +
+                    Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE + " or " + Constants.LOAD_EXTERNAL_DTD_FEATURE);
+        }
+
+        SecurityManager securityManager = new SecurityManager();
+        securityManager.setEntityExpansionLimit(ENTITY_EXPANSION_LIMIT);
+        dbf.setAttribute(Constants.XERCES_PROPERTY_PREFIX + Constants.SECURITY_MANAGER_PROPERTY, securityManager);
+
+        return dbf;
+    }
+
+
 }

@@ -19,20 +19,37 @@ import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.impl.builder.StAXOMBuilder;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.wso2.carbon.base.ServerConfigurationException;
+import org.apache.xerces.impl.Constants;
+import org.apache.xerces.util.SecurityManager;
+import org.w3c.dom.Element;
 import org.wso2.carbon.base.api.ServerConfigurationService;
+import org.wso2.carbon.securevault.SecretManagerInitializer;
 import org.wso2.securevault.SecretResolver;
 import org.wso2.securevault.SecretResolverFactory;
-import org.w3c.dom.Element;
-import org.wso2.carbon.securevault.SecretManagerInitializer;
+import org.wso2.securevault.commons.MiscellaneousUtil;
 
-import javax.xml.namespace.QName;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.stream.XMLStreamException;
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.*;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Stack;
+import java.util.StringTokenizer;
+import javax.xml.namespace.QName;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.stream.XMLStreamException;
 
 /**
  * This class stores the configuration of the Carbon Server.
@@ -63,6 +80,8 @@ public class ServerConfiguration implements ServerConfigurationService {
 	 * transport.
 	 */
 	public static final String HTTP_PORT = "HTTP.Port";
+
+	private static final int ENTITY_EXPANSION_LIMIT = 0;
 
 	/**
 	 * Constant to be used for properties storing the port of the command
@@ -155,7 +174,13 @@ public class ServerConfiguration implements ServerConfigurationService {
 			return;
 		}
 		if (configurationXMLLocation == null) {
-			configurationXMLLocation = "conf/carbon.xml";
+			String configPath = System.getProperty(CarbonBaseConstants.CARBON_CONFIG_DIR_PATH);
+			if (configPath == null) {
+				configurationXMLLocation = Paths.get("conf","carbon.xml").toString();
+			} else {
+				String relativeConfDirPath = Paths.get(System.getProperty(CarbonBaseConstants.CARBON_HOME)).relativize(Paths.get(configPath)).toString();
+				configurationXMLLocation = Paths.get(relativeConfDirPath,"carbon.xml").toString();
+			}
 		}
 
 		InputStream xmlInputStream = null;
@@ -251,18 +276,22 @@ public class ServerConfiguration implements ServerConfigurationService {
 		init(configurationXMLLocation);
 	}
 
-	private void readChildElements(OMElement serverConfig,
-			Stack<String> nameStack) {
-		for (Iterator childElements = serverConfig.getChildElements(); childElements
-				.hasNext();) {
+	private void readChildElements(OMElement serverConfig, Stack<String> nameStack) {
+
+		for (Iterator childElements = serverConfig.getChildElements(); childElements.hasNext(); ) {
 			OMElement element = (OMElement) childElements.next();
 			nameStack.push(element.getLocalName());
 			if (elementHasText(element)) {
 				String key = getKey(nameStack);
-				String value = replaceSystemProperty(element.getText());
-				if (isProtectedToken(key)) {
-					value = getProtectedValue(key);
+				String value;
+				String resolvedValue = MiscellaneousUtil.resolve(element, secretResolver);
+
+				if (resolvedValue != null && !resolvedValue.isEmpty()) {
+					value = resolvedValue;
+				} else {
+					value = element.getText();
 				}
+				value = replaceSystemProperty(value);
 				addToConfiguration(key, value);
 			}
 			readChildElements(element, nameStack);
@@ -304,6 +333,9 @@ public class ServerConfiguration implements ServerConfigurationService {
 			String sysProp = text.substring(indexOfStartingChars + 2,
 					indexOfClosingBrace);
 			String propValue = System.getProperty(sysProp);
+			if (propValue == null) {
+				propValue = System.getenv(sysProp);
+			}
 			if (propValue != null) {
 				text = text.substring(0, indexOfStartingChars) + propValue
 						+ text.substring(indexOfClosingBrace + 1);
@@ -466,10 +498,33 @@ public class ServerConfiguration implements ServerConfigurationService {
 		ByteArrayInputStream inputStream = new ByteArrayInputStream(
 				outputStream.toByteArray());
 
-		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		DocumentBuilderFactory factory = getSecuredDocumentBuilder();
 		factory.setNamespaceAware(true);
 		return factory.newDocumentBuilder().parse(inputStream)
 				.getDocumentElement();
+	}
+
+	private static DocumentBuilderFactory getSecuredDocumentBuilder() {
+
+		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+		dbf.setNamespaceAware(true);
+		dbf.setXIncludeAware(false);
+		dbf.setExpandEntityReferences(false);
+		try {
+			dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE, false);
+			dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE, false);
+			dbf.setFeature(Constants.XERCES_FEATURE_PREFIX + Constants.LOAD_EXTERNAL_DTD_FEATURE, false);
+		} catch (ParserConfigurationException e) {
+			log.error(
+					"Failed to load XML Processor Feature " + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE + " or " +
+							Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE + " or " + Constants.LOAD_EXTERNAL_DTD_FEATURE);
+		}
+
+		SecurityManager securityManager = new SecurityManager();
+		securityManager.setEntityExpansionLimit(ENTITY_EXPANSION_LIMIT);
+		dbf.setAttribute(Constants.XERCES_PROPERTY_PREFIX + Constants.SECURITY_MANAGER_PROPERTY, securityManager);
+
+		return dbf;
 	}
 
 	protected boolean isProtectedToken(String key) {

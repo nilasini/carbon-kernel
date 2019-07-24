@@ -28,10 +28,13 @@ import org.wso2.carbon.user.core.UserStoreManager;
 import org.wso2.carbon.user.core.claim.ClaimManager;
 import org.wso2.carbon.user.core.claim.ClaimMapping;
 import org.wso2.carbon.user.core.claim.DefaultClaimManager;
+import org.wso2.carbon.user.core.claim.inmemory.InMemoryClaimManager;
 import org.wso2.carbon.user.core.claim.builder.ClaimBuilder;
 import org.wso2.carbon.user.core.claim.builder.ClaimBuilderException;
 import org.wso2.carbon.user.core.claim.dao.ClaimDAO;
 import org.wso2.carbon.user.core.config.RealmConfigXMLProcessor;
+import org.wso2.carbon.user.core.constants.UserCoreClaimConstants;
+import org.wso2.carbon.user.core.internal.UserStoreMgtDSComponent;
 import org.wso2.carbon.user.core.profile.ProfileConfiguration;
 import org.wso2.carbon.user.core.profile.ProfileConfigurationManager;
 import org.wso2.carbon.user.core.profile.builder.ProfileBuilderException;
@@ -43,6 +46,8 @@ import java.lang.reflect.Constructor;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
+
+import static org.wso2.carbon.user.core.constants.UserCoreErrorConstants.ErrorMessages.ERROR_CODE_DUPLICATE_ERROR_WHILE_ADDING_CLAIM_MAPPINGS;
 
 public class DefaultRealm implements UserRealm {
 
@@ -83,7 +88,15 @@ public class DefaultRealm implements UserRealm {
         this.tenantId = tenantId;
         dataSource = DatabaseUtil.getRealmDataSource(realmConfig);
         properties.put(UserCoreConstants.DATA_SOURCE, dataSource);
-        claimMan = new DefaultClaimManager(claimMappings, dataSource, tenantId);
+        if (Boolean.parseBoolean(realmConfig.getRealmProperty(UserCoreClaimConstants.INITIALIZE_NEW_CLAIM_MANAGER))) {
+            if (UserStoreMgtDSComponent.getClaimManagerFactory() != null) {
+                claimMan = UserStoreMgtDSComponent.getClaimManagerFactory().createClaimManager(tenantId);
+            } else {
+                claimMan = new InMemoryClaimManager();
+            }
+        } else {
+            claimMan = new DefaultClaimManager(claimMappings, dataSource, tenantId);
+        }
         initializeObjects();
     }
 
@@ -102,9 +115,17 @@ public class DefaultRealm implements UserRealm {
 
         Map<String, ClaimMapping> claimMappings = new HashMap<String, ClaimMapping>();
         Map<String, ProfileConfiguration> profileConfigs = new HashMap<String, ProfileConfiguration>();
-        populateProfileAndClaimMaps(claimMappings, profileConfigs);
 
-        claimMan = new DefaultClaimManager(claimMappings, dataSource, tenantId);
+        if (Boolean.parseBoolean(realmConfig.getRealmProperty(UserCoreClaimConstants.INITIALIZE_NEW_CLAIM_MANAGER))) {
+            if (UserStoreMgtDSComponent.getClaimManagerFactory() != null) {
+                claimMan = UserStoreMgtDSComponent.getClaimManagerFactory().createClaimManager(tenantId);
+            } else {
+                claimMan = new InMemoryClaimManager();
+            }
+        } else {
+            populateProfileAndClaimMaps(claimMappings, profileConfigs);
+            claimMan = new DefaultClaimManager(claimMappings, dataSource, tenantId);
+        }
         initializeObjects();
     }
 
@@ -224,16 +245,24 @@ public class DefaultRealm implements UserRealm {
             }
 
             while (tmpRealmConfig != null) {
+
+                if (tmpRealmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.USER_STORE_DISABLED) != null) {
+                    isDisabled = Boolean.parseBoolean(
+                            tmpRealmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.USER_STORE_DISABLED));
+                }
+                domainName = tmpRealmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
                 value = tmpRealmConfig.getUserStoreClass();
                 if (value == null) {
-                    log.info("System is functioning without user store writing ability. User add/edit/delete will not work");
+                    log.info(
+                            "System is functioning without user store writing ability. User add/edit/delete will not work");
+                } else if (isDisabled){
+                    log.warn("Secondary user store disabled with domain " + domainName + ".");
+                    tmpRealmConfig = tmpRealmConfig.getSecondaryRealmConfig();
+                    continue;
                 } else {
                     try {
-                        UserStoreManager manager = (UserStoreManager) createObjectWithOptions(
-                                value, tmpRealmConfig, properties);
-
-                        domainName = tmpRealmConfig
-                                .getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
+                        UserStoreManager manager = (UserStoreManager) createObjectWithOptions(value, tmpRealmConfig,
+                                properties);
 
                         if (domainName != null) {
                             if (userStoreManager.getSecondaryUserStoreManager(domainName) != null) {
@@ -242,20 +271,6 @@ public class DefaultRealm implements UserRealm {
                                 tmpRealmConfig = tmpRealmConfig.getSecondaryRealmConfig();
                                 continue;
                             } else {
-                                isDisabled = false;
-
-                                if (tmpRealmConfig
-                                        .getUserStoreProperty(UserCoreConstants.RealmConfig.USER_STORE_DISABLED) != null) {
-                                    isDisabled = Boolean
-                                            .parseBoolean(tmpRealmConfig
-                                                    .getUserStoreProperty(UserCoreConstants.RealmConfig.USER_STORE_DISABLED));
-                                    if (isDisabled) {
-                                        log.warn("Secondary user store disabled with domain " + domainName
-                                                + ".");
-                                        tmpRealmConfig = tmpRealmConfig.getSecondaryRealmConfig();
-                                        continue;
-                                    }
-                                }
 
                                 tmpUserStoreManager.setSecondaryUserStoreManager(manager);
                                 userStoreManager.addSecondaryUserStoreManager(domainName,
@@ -435,8 +450,17 @@ public class DefaultRealm implements UserRealm {
                 log.error(msg);
                 throw new UserStoreException(msg, e);
             }
-            claimDAO.addCliamMappings(claimMappings.values().toArray(
-                    new ClaimMapping[claimMappings.size()]));
+
+            try {
+                claimDAO.addCliamMappings(claimMappings.values().toArray(new ClaimMapping[claimMappings.size()]));
+            } catch (UserStoreException e) {
+                if (ERROR_CODE_DUPLICATE_ERROR_WHILE_ADDING_CLAIM_MAPPINGS.getCode().equals(e.getErrorCode())) {
+                    log.warn("Claim mappings are already added to the system. Hence, continue without adding claim" +
+                            " mappings");
+                } else {
+                    throw e;
+                }
+            }
 
         } else {
             try {
@@ -460,6 +484,14 @@ public class DefaultRealm implements UserRealm {
             return false;
         }
 
+    }
+
+    private void setClaimManager(ClaimManager claimManager) throws IllegalAccessException {
+        if (Boolean.parseBoolean(realmConfig.getRealmProperty(UserCoreClaimConstants.INITIALIZE_NEW_CLAIM_MANAGER))) {
+            this.claimMan = claimManager;
+        } else {
+            throw new IllegalAccessException("Set claim manager is not allowed");
+        }
     }
 
 }

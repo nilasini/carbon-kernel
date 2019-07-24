@@ -23,6 +23,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.CarbonConstants;
+import org.wso2.carbon.base.ServerConfiguration;
 import org.wso2.carbon.core.common.AuthenticationException;
 import org.wso2.carbon.ui.tracker.AuthenticatorRegistry;
 import org.wso2.carbon.utils.ServerConstants;
@@ -39,6 +40,10 @@ import java.util.regex.Pattern;
 
 public final class CarbonUILoginUtil {
 
+    private static final String ACCOUNT_LOCK_ERROR_CODE = "17003";
+    private static final String ACCOUNT_LOCK_ERROR_MESSAGE = "Cannot login until the account is unlocked.";
+    private static final String USER_NOT_FOUND_ERROR_CODE = "17001";
+    private static final String INVALID_CREDENTIALS_ERROR_CODE = "Invalid user credentials.";
     private static Log log = LogFactory.getLog(CarbonUILoginUtil.class);
     private static Pattern tenantEnabledUriPattern;
     private static final String TENANT_ENABLED_URI_PATTERN = "(/.*/|/)"
@@ -67,6 +72,13 @@ public final class CarbonUILoginUtil {
      */
     protected static CarbonUIAuthenticator getAuthenticator(HttpServletRequest request) {
         return AuthenticatorRegistry.getCarbonAuthenticator(request);
+    }
+
+    private static String sanitize(String input) {
+        if (input.isEmpty()) {
+            return input;
+        }
+        return input.replaceAll("(\\r|\\n|%0D|%0A|%0a|%0d)", "");
     }
 
     /**
@@ -104,7 +116,7 @@ public final class CarbonUILoginUtil {
             request.getSession(false).setAttribute("requestedUri", tmpURI);
             if (!tmpURI.contains("session-validate.jsp") && !("/null").equals(requestedURI)) {
                 // Also setting it in a cookie, for non-remember-me cases
-                Cookie cookie = new Cookie("requestedURI", tmpURI);
+                Cookie cookie = new Cookie("requestedURI", sanitize(tmpURI));
                 cookie.setPath("/");
                 cookie.setSecure(true);
                 cookie.setHttpOnly(true);
@@ -185,9 +197,19 @@ public final class CarbonUILoginUtil {
                         indexPageURL = cookie.getValue();
                     }
                 }
+
+                if (indexPageURL == null) {
+                    return null;
+                }
+
                 // Removing any tenant specific strings from the cookie value for the indexPageURL
                 if (tenantEnabledUriPattern.matcher(indexPageURL).matches()) {
                     indexPageURL = CarbonUIUtil.removeTenantSpecificStringsFromURL(indexPageURL);
+                }
+
+                // If the index page URL contains a scheme or the tenant-dashboard, redirects to default index page
+                if (hasScheme(indexPageURL) || indexPageURL.contains("tenant-dashboard/index.jsp")) {
+                    indexPageURL = null;
                 }
             }
         }
@@ -200,19 +222,19 @@ public final class CarbonUILoginUtil {
      * @return
      */
     protected static boolean letRequestedUrlIn(String requestedURI, String tempUrl) {
-        if (requestedURI.endsWith(".css") || requestedURI.endsWith(".gif")
+        return ((validExtensionInUrl(requestedURI) && !requestedURI.contains(";"))
+                || requestedURI.contains("/registry") || requestedURI.contains("/openid/")
+                || requestedURI.contains("/openidserver") || requestedURI.contains("/gadgets")
+                || requestedURI.contains("/samlsso"));
+    }
+
+    private static boolean validExtensionInUrl(String requestedURI) {
+        return requestedURI.endsWith(".css") || requestedURI.endsWith(".gif")
                 || requestedURI.endsWith(".GIF") || requestedURI.endsWith(".jpg")
                 || requestedURI.endsWith(".JPG") || requestedURI.endsWith(".png")
                 || requestedURI.endsWith(".PNG") || requestedURI.endsWith(".xsl")
                 || requestedURI.endsWith(".xslt") || requestedURI.endsWith(".js")
-                || requestedURI.startsWith("/registry") || requestedURI.endsWith(".html")
-                || requestedURI.endsWith(".ico") || requestedURI.startsWith("/openid/")
-                || requestedURI.indexOf("/openid/") > -1
-                || requestedURI.indexOf("/openidserver") > -1
-                || requestedURI.indexOf("/gadgets") > -1 || requestedURI.indexOf("/samlsso") > -1) {
-            return true;
-        }
-        return false;
+                || requestedURI.endsWith(".html") || requestedURI.endsWith(".ico");
     }
 
     /**
@@ -316,7 +338,7 @@ public final class CarbonUILoginUtil {
         // This condition is evaluated when users are logged out in SAML2 based SSO
         if (request.getAttribute("logoutRequest") != null) {
         	log.debug("Loging out from SSO session");
-            response.sendRedirect("../../carbon/sso-acs/redirect_ajaxprocessor.jsp?logout=true");
+            response.sendRedirect(contextPath + "/carbon/sso-acs/redirect_ajaxprocessor.jsp?logout=true");
             return false;
         }
 
@@ -337,6 +359,7 @@ public final class CarbonUILoginUtil {
         Cookie rmeCookie = new Cookie(CarbonConstants.REMEMBER_ME_COOKE_NAME, null);
         rmeCookie.setPath("/");
         rmeCookie.setSecure(true);
+        rmeCookie.setHttpOnly(true);
         rmeCookie.setMaxAge(0);
         response.addCookie(rmeCookie);
         response.sendRedirect(contextPath + indexPageURL);
@@ -370,10 +393,12 @@ public final class CarbonUILoginUtil {
 //        	}
 
             String relayState = request.getParameter("RelayState");
-            if (relayState != null && relayState.endsWith("-logout")) {
+            String idpSessionIndex = request.getParameter("idpSessionIndex");
+            if (relayState != null && relayState.endsWith("-logout")
+                    && idpSessionIndex != null && !"".equals(idpSessionIndex)) {
                 session.setAttribute(CarbonSecuredHttpContext.LOGGED_USER, request.getParameter("username"));
-                session.setAttribute("idpSessionIndex", request.getParameter("idpSessionIndex"));
-                response.sendRedirect("/carbon/sso-acs/redirect_ajaxprocessor.jsp?logout=true");
+                session.setAttribute("idpSessionIndex", idpSessionIndex);
+                response.sendRedirect(contextPath + "/carbon/sso-acs/redirect_ajaxprocessor.jsp?logout=true");
                 return false;
             }
 
@@ -422,6 +447,7 @@ public final class CarbonUILoginUtil {
                             rememberMeCookieValue);
                     rmeCookie.setPath("/");
                     rmeCookie.setSecure(true);
+                    rmeCookie.setHttpOnly(true);
                     rmeCookie.setMaxAge(age);
                     response.addCookie(rmeCookie);
                 }
@@ -431,6 +457,12 @@ public final class CarbonUILoginUtil {
 				if (log.isDebugEnabled()) {
 					log.debug("Security check failed for login request for " + userName);
 				}
+                return false;
+            }
+
+            if (relayState != null && relayState.endsWith("-logout")) {
+                session.setAttribute(CarbonSecuredHttpContext.LOGGED_USER, request.getParameter("username"));
+                response.sendRedirect("/carbon/admin/logout_action.jsp");
                 return false;
             }
 
@@ -448,11 +480,26 @@ public final class CarbonUILoginUtil {
             try {
                 request.getSession().invalidate();
                 getAuthenticator(request).unauthenticate(request);
+
+                if (isLoginFailureReasonEnabled()) {
+                    if (e.getCause().getMessage().contains(ACCOUNT_LOCK_ERROR_CODE) || e.getCause().getMessage()
+                            .contains(ACCOUNT_LOCK_ERROR_MESSAGE)) {
+                        response.sendRedirect(contextPath + "/carbon/admin/login.jsp?loginStatus=false&errorCode=error" +
+                                ".code.17003");
+                        return false;
+                    } else if (e.getCause().getMessage().contains(USER_NOT_FOUND_ERROR_CODE)) {
+                        response.sendRedirect(contextPath + "/carbon/admin/login.jsp?loginStatus=false&errorCode=error.code.17001");
+                        return false;
+                    } else if (e.getCause().getMessage().contains(INVALID_CREDENTIALS_ERROR_CODE)) {
+                        response.sendRedirect(contextPath + "/carbon/admin/login.jsp?loginStatus=false&errorCode=error.code.17002");
+                        return false;
+                    }
+                }
                 if (httpLogin != null) {
                     response.sendRedirect(httpLogin + "?loginStatus=false");
                     return false;
                 } else {
-                    response.sendRedirect("/carbon/admin/login.jsp?loginStatus=false");
+                    response.sendRedirect(contextPath + "/carbon/admin/login.jsp?loginStatus=false");
                     return false;
                 }
             } catch (Exception e1) {
@@ -652,6 +699,36 @@ public final class CarbonUILoginUtil {
         if (msgCtx != null) {
             String incomingTransportName = msgCtx.getIncomingTransportName();
             return incomingTransportName.equals(ServerConstants.LOCAL_TRANSPORT);
+        }
+        return false;
+    }
+
+    private static boolean isLoginFailureReasonEnabled() {
+
+        String enableLoginFailureReason = ServerConfiguration.getInstance().
+                getFirstProperty("EnableLoginFailureReason");
+        return enableLoginFailureReason != null && "true".equals(enableLoginFailureReason.trim());
+    }
+
+    /**
+     * Determine if the character is allowed in the scheme of a URI.
+     */
+    private static boolean isSchemeChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '+' || c == '-' || c == '.';
+    }
+
+    /**
+     * Determine if a URI string has a scheme component.
+     */
+    private static boolean hasScheme(String uri) {
+        int len = uri.length();
+        for (int i = 0; i < len; i++) {
+            char c = uri.charAt(i);
+            if (c == ':') {
+                return i > 0;
+            } else if (!isSchemeChar(c)) {
+                return false;
+            }
         }
         return false;
     }

@@ -18,19 +18,23 @@
 package org.wso2.carbon.user.core.util;
 
 import org.apache.axiom.om.util.Base64;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.CarbonConstants;
 import org.wso2.carbon.context.CarbonContext;
 import org.wso2.carbon.user.api.RealmConfiguration;
+import org.wso2.carbon.utils.Secret;
 import org.wso2.carbon.user.core.UserCoreConstants;
 import org.wso2.carbon.user.core.UserStoreException;
 import org.wso2.carbon.user.core.authorization.DBConstants;
 import org.wso2.carbon.user.core.common.UserStore;
 import org.wso2.carbon.user.core.dto.RoleDTO;
+import org.wso2.carbon.user.core.internal.UserStoreMgtDSComponent;
 import org.wso2.carbon.user.core.jdbc.JDBCRealmConstants;
 import org.wso2.carbon.user.core.service.RealmService;
 import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
+import org.wso2.carbon.utils.UnsupportedSecretTypeException;
 import org.wso2.carbon.utils.xml.StringUtils;
 
 import javax.sql.DataSource;
@@ -45,7 +49,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,6 +59,8 @@ import java.util.regex.Pattern;
 public final class UserCoreUtil {
 
     private static final String DUMMY_VALUE = "dummy";
+    private static final String APPLICATION_DOMAIN = "Application";
+    private static final String WORKFLOW_DOMAIN = "Workflow";
     private static Log log = LogFactory.getLog(UserCoreUtil.class);
     private static Boolean isEmailUserName;
     private static Boolean isCrossTenantUniqueUserName;
@@ -86,7 +91,6 @@ public final class UserCoreUtil {
 
         int j = 0;
         for (int i = arr1.length; i < newArray.length; i++) {
-            Arrays.toString(newArray);
             newArray[i] = arr2[j];
             j++;
         }
@@ -172,6 +176,7 @@ public final class UserCoreUtil {
      * @return
      * @throws UserStoreException
      */
+    @Deprecated
     public static String getPasswordToStore(String password, String passwordHashMethod,
                                             boolean isKdcEnabled) throws UserStoreException {
 
@@ -204,6 +209,60 @@ public final class UserCoreUtil {
     }
 
     /**
+     * process the original password to be stored as per the given hash method and the status of Kerberos Key
+     * Distribution Center (KDC).
+     * If KDC is enabled plain text password is returned in a byte array since it cannot operate with hashed passwords.
+     * Otherwise if the provided hash method is not null password is hashed and returned in a byte array.
+     *
+     * @param password  original password as an Object
+     * @param passwordHashMethod hash method of the password as a String
+     * @param isKdcEnabled boolean true if KDC is enabled and false if not enabled
+     * @return password to store in a byte array
+     * @throws UserStoreException
+     */
+    public static byte[] getPasswordToStore(Object password, String passwordHashMethod, boolean isKdcEnabled)
+            throws UserStoreException {
+
+        Secret credentialObj;
+        try {
+            credentialObj = Secret.getSecret(password);
+        } catch (UnsupportedSecretTypeException e) {
+            throw new UserStoreException("Unsupported credential type", e);
+        }
+
+        try {
+            byte[] passwordBytes = credentialObj.getBytes();
+            byte[] passwordToStore = Arrays.copyOf(passwordBytes, passwordBytes.length);
+
+            if (isKdcEnabled) {
+                // If KDC is enabled we will always use plain text passwords.
+                // Cause - KDC cannot operate with hashed passwords.
+                return passwordToStore;
+            }
+
+            if (passwordHashMethod != null) {
+
+                if (passwordHashMethod.equals(UserCoreConstants.RealmConfig.PASSWORD_HASH_METHOD_PLAIN_TEXT)) {
+                    return passwordToStore;
+                }
+
+                try {
+                    MessageDigest messageDigest = MessageDigest.getInstance(passwordHashMethod);
+                    byte[] digestValue = messageDigest.digest(passwordBytes);
+                    String saltedPassword = "{" + passwordHashMethod + "}" + Base64.encode(digestValue);
+                    passwordToStore = saltedPassword.getBytes();
+                } catch (NoSuchAlgorithmException e) {
+                    throw new UserStoreException("Invalid hashMethod", e);
+                }
+            }
+
+            return passwordToStore;
+        } finally {
+            credentialObj.clear();
+        }
+    }
+
+    /**
      * @param realmConfig
      * @return
      */
@@ -223,7 +282,7 @@ public final class UserCoreUtil {
      * @return
      */
     public static String getDummyPassword() {
-        Random rand = new Random();
+        SecureRandom rand = new SecureRandom();
         return DUMMY_VALUE + rand.nextInt(999999);
     }
 
@@ -256,21 +315,47 @@ public final class UserCoreUtil {
      * @return
      * @throws UserStoreException
      */
+    @Deprecated
     public static String getPolicyFriendlyRandomPassword(String username) throws UserStoreException {
         return getPolicyFriendlyRandomPassword(username, 8);
+    }
+
+    /**
+     * This method generates a random password that adhere to most of the password policies defined by various LDAPs
+     * such as AD, ApacheDS 2.0 etc.
+     *
+     * @param username username of the end user
+     * @return random password generated as a character array
+     * @throws UserStoreException
+     */
+    public static char[] getPolicyFriendlyRandomPasswordInChars(String username) throws UserStoreException {
+        return getPolicyFriendlyRandomPasswordInChars(username, 8);
     }
 
     /**
      * This method generates a random password that adhere to most of the password policies defined
      * by various LDAPs such as AD, ApacheDS 2.0 etc
      *
-     * @param username
-     * @param length
-     * @return password
+     * @param username username of the end user
+     * @param length   length of the generating password
+     * @return random password as a String
      * @throws UserStoreException
      */
-    public static String getPolicyFriendlyRandomPassword(String username, int length)
-            throws UserStoreException {
+    @Deprecated
+    public static String getPolicyFriendlyRandomPassword(String username, int length) throws UserStoreException {
+        return new String(getPolicyFriendlyRandomPasswordInChars(username, length));
+    }
+
+    /**
+     * This method generates a random password that adhere to most of the password policies defined
+     * by various LDAPs such as AD, ApacheDS 2.0 etc
+     *
+     * @param username username of the end user
+     * @param length length of the generating password
+     * @return random password as a character array
+     * @throws UserStoreException
+     */
+    public static char[] getPolicyFriendlyRandomPasswordInChars(String username, int length) throws UserStoreException {
 
         if (length < 8 || length > 50) {
             length = 12;
@@ -313,7 +398,7 @@ public final class UserCoreUtil {
             throw new UserStoreException(errorMessage, e);
         }
 
-        return new String(password).concat(randomNum);
+        return ArrayUtils.addAll(password, randomNum.toCharArray());
     }
 
     /**
@@ -339,14 +424,13 @@ public final class UserCoreUtil {
      * @param domain
      */
     public static void setDomainInThreadLocal(String domain) {
-        if (domain != null && !UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME.equalsIgnoreCase(domain)) {
-            threadLocalToSetDomain.set(domain.toUpperCase());
-        }
 
-        if (domain == null || (UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME.equalsIgnoreCase
-                (domain) && threadLocalToSetDomain.get() != null)) {
+        if (domain == null || domain.trim().isEmpty() || UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME
+                .equalsIgnoreCase(domain)) {
             // clear the thread local variable.
             threadLocalToSetDomain.remove();
+        } else {
+            threadLocalToSetDomain.set(domain.toUpperCase());
         }
     }
 
@@ -484,7 +568,11 @@ public final class UserCoreUtil {
      * @return
      */
     public static String getDomainName(RealmConfiguration realmConfig) {
-        return realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
+        String domainName = realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
+        if(domainName != null) {
+            domainName = domainName.toUpperCase();
+        }
+        return domainName;
     }
 
     /**
@@ -534,7 +622,7 @@ public final class UserCoreUtil {
                 if ((index = name.indexOf(UserCoreConstants.DOMAIN_SEPARATOR)) > 0) {
                     String domain = name.substring(0, index);
                     if (!UserCoreConstants.INTERNAL_DOMAIN.equalsIgnoreCase(domain)
-                        && !UserCoreConstants.APPLICATION_DOMAIN.equalsIgnoreCase(domain)) {
+                        && !APPLICATION_DOMAIN.equalsIgnoreCase(domain) && !WORKFLOW_DOMAIN.equalsIgnoreCase(domain)) {
                         // remove domain name if exist
                         nameList.add(name.substring(index + 1));
                     } else {
@@ -706,13 +794,23 @@ public final class UserCoreUtil {
     }
 
     public static String extractDomainFromName(String nameWithDomain) {
-        int index;
-        if ((index = nameWithDomain.indexOf(CarbonConstants.DOMAIN_SEPARATOR)) > 0) {
-            // extract the domain name if exist
-            String names[] = nameWithDomain.split(CarbonConstants.DOMAIN_SEPARATOR);
+        if (nameWithDomain.indexOf(UserCoreConstants.DOMAIN_SEPARATOR) > 0) {
+            String names[] = nameWithDomain.split(UserCoreConstants.DOMAIN_SEPARATOR);
             return names[0];
+        } else {
+            if (UserStoreMgtDSComponent.getRealmService() != null) {
+                //this check is added to avoid NullPointerExceptions if the osgi is not started yet.
+                //as an example when running the unit tests.
+                RealmConfiguration realmConfiguration = UserStoreMgtDSComponent.getRealmService()
+                        .getBootstrapRealmConfiguration();
+                if (realmConfiguration.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME) != null) {
+                    return realmConfiguration.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
+                } else {
+                    return UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME;
+                }
+            }
+            return UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME;
         }
-        return UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME;
     }
 
     public static void persistDomain(String domain, int tenantId, DataSource dataSource) throws UserStoreException {
@@ -724,18 +822,19 @@ public final class UserCoreUtil {
                 domain = domain.toUpperCase();
             }
 
-            if (!isExistingDomain(domain, tenantId, dataSource)) {
-                dbConnection = DatabaseUtil.getDBConnection(dataSource);
-                dbConnection.setAutoCommit(false);
+            dbConnection = DatabaseUtil.getDBConnection(dataSource);
+            dbConnection.setAutoCommit(false);
+            if (!isExistingDomain(domain, tenantId, dbConnection)) {
                 DatabaseUtil.updateDatabase(dbConnection, sqlStatement, domain, tenantId);
-                dbConnection.commit();
             }
+            dbConnection.commit();
         } catch (UserStoreException e) {
             String errorMessage =
                     "Error occurred while checking is existing domain : " + domain + " for tenant : " + tenantId;
             if (log.isDebugEnabled()) {
                 log.debug(errorMessage, e);
             }
+            DatabaseUtil.rollBack(dbConnection);
             throw new UserStoreException(errorMessage, e);
         } catch (SQLException e) {
             String errorMessage =
@@ -750,7 +849,8 @@ public final class UserCoreUtil {
 
     }
 
-    public static void deletePersistedDomain(String domain, int tenantId, DataSource dataSource) throws UserStoreException {
+    public static void deletePersistedDomain(String domain, int tenantId, DataSource dataSource)
+            throws UserStoreException {
         Connection dbConnection = null;
         try {
             String sqlStatement = JDBCRealmConstants.DELETE_DOMAIN_SQL;
@@ -758,13 +858,12 @@ public final class UserCoreUtil {
             if (domain != null) {
                 domain = domain.toUpperCase();
             }
-
-            if (isExistingDomain(domain, tenantId, dataSource)) {
-                dbConnection = DatabaseUtil.getDBConnection(dataSource);
-                dbConnection.setAutoCommit(false);
+            dbConnection = DatabaseUtil.getDBConnection(dataSource);
+            dbConnection.setAutoCommit(false);
+            if (isExistingDomain(domain, tenantId, dbConnection)) {
                 DatabaseUtil.updateDatabase(dbConnection, sqlStatement, domain, tenantId);
-                dbConnection.commit();
             }
+            dbConnection.commit();
         } catch (UserStoreException e) {
             String errorMessage =
                     "Error occurred while deleting domain : " + domain + " for tenant : " + tenantId;
@@ -784,7 +883,8 @@ public final class UserCoreUtil {
         }
     }
 
-    public static void updatePersistedDomain(String previousDomain, String newDomain, int tenantId, DataSource dataSource) throws UserStoreException {
+    public static void updatePersistedDomain(String previousDomain, String newDomain, int tenantId,
+                                             DataSource dataSource) throws UserStoreException {
         Connection dbConnection = null;
         try {
             String sqlStatement = JDBCRealmConstants.UPDATE_DOMAIN_SQL;
@@ -796,16 +896,16 @@ public final class UserCoreUtil {
                 newDomain = newDomain.toUpperCase();
             }
 
+            dbConnection = DatabaseUtil.getDBConnection(dataSource);
             // check for previous domain exists
-            if (isExistingDomain(previousDomain, tenantId, dataSource)) {
+            if (isExistingDomain(previousDomain, tenantId, dbConnection)) {
 
                 // New domain already exists, delete it first
-                if (!isExistingDomain(newDomain, tenantId, dataSource)) {
+                if (!isExistingDomain(newDomain, tenantId, dbConnection)) {
                     deletePersistedDomain(newDomain, tenantId, dataSource);
                 }
 
                 // Now rename the domain name
-                dbConnection = DatabaseUtil.getDBConnection(dataSource);
                 dbConnection.setAutoCommit(false);
                 DatabaseUtil.updateDatabase(dbConnection, sqlStatement, newDomain, previousDomain, tenantId);
                 dbConnection.commit();
@@ -860,16 +960,14 @@ public final class UserCoreUtil {
 //		}
 //    }
 
-    private static boolean isExistingDomain(String domain, int tenantId, DataSource dataSource)
+    private static boolean isExistingDomain(String domain, int tenantId, Connection connection)
             throws UserStoreException {
-        Connection dbConnection = null;
         PreparedStatement prepStmt = null;
         ResultSet rs = null;
         boolean isExisting = false;
 
         try {
-            dbConnection = DatabaseUtil.getDBConnection(dataSource);
-            prepStmt = dbConnection.prepareStatement(JDBCRealmConstants.IS_DOMAIN_EXISTING_SQL);
+            prepStmt = connection.prepareStatement(JDBCRealmConstants.IS_DOMAIN_EXISTING_SQL);
             if (domain != null) {
                 domain = domain.toUpperCase();
             }
@@ -888,11 +986,12 @@ public final class UserCoreUtil {
             }
             throw new UserStoreException(errorMessage, e);
         } finally {
-            DatabaseUtil.closeAllConnections(dbConnection, rs, prepStmt);
+            DatabaseUtil.closeAllConnections( null, rs, prepStmt );
         }
     }
 
-    private static boolean checkExistingDomainId(int domainId, int tenantId, DataSource dataSource) throws UserStoreException {
+    private static boolean checkExistingDomainId(int domainId, int tenantId, DataSource dataSource)
+            throws UserStoreException {
         Connection dbConnection = null;
         PreparedStatement prepStmt = null;
         ResultSet rs = null;
@@ -965,5 +1064,31 @@ public final class UserCoreUtil {
      */
     public static String getTenantShareGroupBase(String tenantOu) {
         return tenantOu + "=" + CarbonContext.getThreadLocalCarbonContext().getTenantDomain();
+    }
+
+    /**
+     * Clear sensitive char arrays
+     *
+     * @param chars char array to be cleared
+     */
+    public static void clearSensitiveChars(char[] chars) {
+        if (chars == null) {
+            return;
+        }
+
+        Arrays.fill(chars, '\u0000');
+    }
+
+    /**
+     * Clear sensitive byte arrays
+     *
+     * @param bytes byte array to be cleared
+     */
+    public static void clearSensitiveBytes(byte[] bytes) {
+        if (bytes == null) {
+            return;
+        }
+
+        Arrays.fill(bytes, (byte) 0);
     }
 }

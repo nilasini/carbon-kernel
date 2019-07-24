@@ -18,6 +18,8 @@ var addRepositoryOnCompleteReturnTabID;
 
 var $myTabs;
 
+jQuery.ajaxSetup({ traditional: true });
+
 $(function() {
     $myTabs = $("#tabs");
 
@@ -1006,18 +1008,20 @@ function restartServerGracefully() {
 }
 
 function restartServerGracefullyCallback() {
-    var url = "../server-admin/proxy_ajaxprocessor.jsp?action=restartGracefully";
     jQuery.noConflict();
-    jQuery("#output").load(url, null, function (responseText, status, XMLHttpRequest) {
-        /*if (jQuery.trim(responseText) != '') {
+    jQuery.post("../server-admin/proxy_ajaxprocessor.jsp",
+        {
+            "action":"restartGracefully"
+        },function (responseText, status, XMLHttpRequest) {
+            /*        if (jQuery.trim(responseText) != '') {
                 CARBON.showWarningDialog(responseText);
                 return;
-        }*/
-
-        if (status != "success") {
-            CARBON.showErrorDialog(jsi18n["graceful.restart.error"]);
-        } else {
-            CARBON.showInfoDialog(jsi18n["graceful.restart.in.progress.message"]);
+            }*/
+            if (status != "success") {
+                CARBON.showErrorDialog(jsi18n["graceful.restart.error"]);
+            } else {
+                CARBON.showInfoDialog(jsi18n["graceful.restart.in.progress.message"]);
+            }
         }
-    });
+    );
 }

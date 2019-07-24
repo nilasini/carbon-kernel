@@ -37,14 +37,14 @@
             <Parameter name="NameIDPolicyFormat">urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</Parameter>
             <Parameter name="AssertionConsumerServiceURL">https://localhost:9443/acs</Parameter>
 
-            <!-- <Parameter name="ResponseSignatureValidationEnabled">false</Parameter> -->
-            <!-- <Parameter name="VerifySignatureWithUserDomain">false</Parameter> -->
             <!-- <Parameter name="IdPCertAlias">wso2carbon</Parameter> -->
+            <!-- <Parameter name="ResponseSignatureValidationEnabled">false</Parameter> -->
+            <!-- <Parameter name="AssertionSignatureValidationEnabled">false</Parameter> -->
             <!-- <Parameter name="LoginAttributeName"></Parameter> -->
             <!-- <Parameter name="RoleClaimAttribute"></Parameter> -->
             <!-- <Parameter name="AttributeValueSeparator">,</Parameter> -->
 
-            <!-- <Parameter name="JITUserProvisioning">true</Parameter> -->
+            <!-- <Parameter name="JITUserProvisioningEnabled">true</Parameter> -->
             <!-- <Parameter name="ProvisioningDefaultUserstore">PRIMARY</Parameter> -->
             <!-- <Parameter name="ProvisioningDefaultRole">admin</Parameter> -->
             <!-- <Parameter name="IsSuperAdminRoleRequired">true</Parameter> -->

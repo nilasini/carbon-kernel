@@ -22,6 +22,12 @@ import org.apache.commons.logging.LogFactory;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.CarbonConstants;
 import org.wso2.carbon.base.ServerConfiguration;
 import org.wso2.carbon.caching.impl.CacheInvalidator;
@@ -61,6 +67,7 @@ import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.lang.management.ManagementPermission;
 import java.util.LinkedList;
@@ -68,28 +75,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Stack;
 
-/**
- * The Registry Kernel Declarative Service Component.
- *
- * @scr.component name="registry.core.dscomponent" immediate="true"
- * @scr.reference name="user.realmservice.default"
- * interface="org.wso2.carbon.user.core.service.RealmService"
- * cardinality="1..1" policy="dynamic" bind="setRealmService" unbind="unsetRealmService"
- * @scr.reference name="statistics.collector"
- * interface="org.wso2.carbon.registry.core.statistics.StatisticsCollector"
- * cardinality="0..n" policy="dynamic" bind="setStatisticsCollector"
- * unbind="unsetStatisticsCollector"
- * @scr.reference name="CacheInvalidator"
- * interface="org.wso2.carbon.caching.impl.CacheInvalidator"
- * cardinality="0..n" policy="dynamic" bind="setCacheInvalidatorService" unbind="unSetCacheInvalidatorService"
- */
 @SuppressWarnings("JavaDoc")
+@Component(name = "registry.core.dscomponent", immediate = true)
 public class RegistryCoreServiceComponent {
 
     @SuppressWarnings("deprecation")
     private static org.wso2.carbon.registry.core.config.RegistryConfiguration registryConfig;
 
-    private static RealmService realmService;
+    //private static RealmService realmService;
+
+    private RegistryDataHolder dataHolder = RegistryDataHolder.getInstance();
 
     private static final Log log = LogFactory.getLog(RegistryCoreServiceComponent.class);
 
@@ -107,6 +102,7 @@ public class RegistryCoreServiceComponent {
      * @param context the OSGi component context.
      */
     @SuppressWarnings("unused")
+
     protected void activate(ComponentContext context) {
         // for new cahing, every thread should has its own populated CC. During the deployment time we assume super tenant
         PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
@@ -117,6 +113,10 @@ public class RegistryCoreServiceComponent {
         SecurityManager securityManager = System.getSecurityManager();
         if(securityManager != null){
             securityManager.checkPermission(new ManagementPermission("control"));
+        }
+        if (Boolean.parseBoolean(System.getProperty("NonRegistryMode"))) {
+            log.debug("Registry component activated in Non-Registry Mode");
+            return;
         }
         try {
             bundleContext = context.getBundleContext();
@@ -148,8 +148,7 @@ public class RegistryCoreServiceComponent {
     // Creates a queue service for logging events
     private void startLogWriter(RegistryService registryService) throws RegistryException {
 
-        Registry registry = registryService.getRegistry(
-                CarbonConstants.REGISTRY_SYSTEM_USERNAME);
+        Registry registry = registryService.getRegistry(CarbonConstants.REGISTRY_SYSTEM_USERNAME);
         final RegistryContext registryContext = registry.getRegistryContext();
         if (bundleContext != null) {
             bundleContext.registerService(LogQueue.class.getName(),
@@ -200,6 +199,7 @@ public class RegistryCoreServiceComponent {
      * @param context the OSGi component context.
      */
     @SuppressWarnings("unused")
+
     protected void deactivate(ComponentContext context) {
         while (!registrations.empty()) {
             registrations.pop().unregister();
@@ -295,7 +295,9 @@ public class RegistryCoreServiceComponent {
                     }
                     defineFixedMount(registry, mount.getPath(), isSuperTenant);
                 } else if (mount.isOverwrite()) {
-                    registry.delete(mount.getPath());
+                    if (registry.resourceExists(mount.getPath())) {
+                        registry.delete(mount.getPath());
+                    }
                     if (isSuperTenant) {
                         superTenantRegistry.createLink(mount.getPath(), mount.getInstanceId(),
                                 mount.getTargetPath());
@@ -578,10 +580,21 @@ public class RegistryCoreServiceComponent {
     // Gets registry service for the Embedded Registry
     private RegistryService getEmbeddedRegistryService() throws Exception {
 
-        InputStream configInputStream = new FileInputStream(getConfigFile());
-        RegistryContext registryContext =
-                RegistryContext.getBaseInstance(configInputStream, realmService);
-        registryContext.setSetup(System.getProperty(RegistryConstants.SETUP_PROPERTY) != null);
+        InputStream configInputStream = null;
+        RegistryContext registryContext;
+        try {
+            configInputStream = new FileInputStream(getConfigFile());
+            registryContext = RegistryContext.getBaseInstance(configInputStream, dataHolder.getRealmService());
+            registryContext.setSetup(System.getProperty(RegistryConstants.SETUP_PROPERTY) != null);
+        } finally {
+            if (configInputStream != null) {
+                try {
+                    configInputStream.close();
+                } catch (IOException e) {
+                    log.error("Failed to close the stream" ,e);
+                }
+            }
+        }
         return new EmbeddedRegistryService(registryContext);
     }
 
@@ -600,7 +613,7 @@ public class RegistryCoreServiceComponent {
                 .getValue(org.wso2.carbon.registry.core.config.RegistryConfiguration.REGISTRY_ROOT);
 
         return new RemoteRegistryService(url, username,
-                password, realmService, chroot);
+                password, dataHolder.getRealmService(), chroot);
     }
 
     // Gets registry configuration instance.
@@ -652,6 +665,8 @@ public class RegistryCoreServiceComponent {
      *
      * @param _cacheInvalidator the cache invalidator service.
      */
+    @Reference(name = "CacheInvalidator", cardinality = ReferenceCardinality.MULTIPLE, policy = ReferencePolicy.DYNAMIC, 
+            unbind = "unSetCacheInvalidatorService")
     protected void setCacheInvalidatorService(CacheInvalidator _cacheInvalidator) {
         cacheInvalidator = _cacheInvalidator;
     }
@@ -681,6 +696,8 @@ public class RegistryCoreServiceComponent {
      *
      * @param realmService the realm service.
      */
+    @Reference(name = "user.realmservice.default", cardinality = ReferenceCardinality.MANDATORY, policy = ReferencePolicy.DYNAMIC, 
+            unbind = "unsetRealmService")
     protected void setRealmService(RealmService realmService) {
         // this is used in check-in client
         updateRealmService(realmService);
@@ -702,6 +719,8 @@ public class RegistryCoreServiceComponent {
      * @param statisticsCollector the statistics collector service.
      */
     @SuppressWarnings("unused")
+    @Reference(name = "statistics.collector", cardinality = ReferenceCardinality.MULTIPLE, policy = ReferencePolicy.DYNAMIC, 
+            unbind = "unsetStatisticsCollector")
     protected synchronized void setStatisticsCollector(StatisticsCollector statisticsCollector) {
         RegistryContext.getBaseInstance().addStatisticsCollector(statisticsCollector);
     }
@@ -718,7 +737,7 @@ public class RegistryCoreServiceComponent {
 
     // Method to update realm service.
     private static void updateRealmService(RealmService service) {
-        realmService = service;
+        RegistryDataHolder.getInstance().setRealmService(service);
     }
 
     // Method to update registry configuration.
@@ -768,7 +787,7 @@ public class RegistryCoreServiceComponent {
      * @return the instance of the realm service.
      */
     public static RealmService getRealmService() {
-        return realmService;
+        return RegistryDataHolder.getInstance().getRealmService();
     }
 
 
@@ -831,12 +850,34 @@ public class RegistryCoreServiceComponent {
             this.service = service;
         }
 
-        private synchronized boolean canInitializeTenant(int tenantId) {
+        private synchronized boolean canInitializeTenant(int tenantId) throws RegistryException {
+            RegistryContext registryContext = RegistryContext.getBaseInstance();
+            for (Mount mount : registryContext.getMounts()) {
+                if (!validateRegistryMounts(registryContext, mount, tenantId)) {
+                    log.info("Tenant " + tenantId + " is not initialized correctly. Hence "
+                            + "initializing the tenant registry");
+                    return true;
+                }
+            }
+
             if (initializedTenants.contains(tenantId)) {
                 return false;
             }
-            initializedTenants.add(tenantId);
             return true;
+        }
+
+        private boolean validateRegistryMounts(RegistryContext registryContext, Mount mount, int tenantId)
+                throws RegistryException {
+            Registry registry = service.getRegistry(CarbonConstants.REGISTRY_SYSTEM_USERNAME, tenantId);
+            String relativePath = RegistryUtils.getRelativePath(registryContext, mount.getPath());
+            String lookupPath = RegistryUtils.getAbsolutePath(registryContext,
+                    RegistryConstants.LOCAL_REPOSITORY_BASE_PATH + RegistryConstants.SYSTEM_MOUNT_PATH) + "/"
+                    + relativePath.replace("/", "-");
+            if (!registry.resourceExists(lookupPath)) {
+                return false;
+            }
+            Resource resource = registry.get(lookupPath);
+            return Boolean.valueOf(resource.getProperty(RegistryConstants.REGISTRY_FIXED_MOUNT));
         }
 
         public void createdConfigurationContext(ConfigurationContext configurationContext) {
@@ -864,6 +905,7 @@ public class RegistryCoreServiceComponent {
             		tenantId != MultitenantConstants.SUPER_TENANT_ID && 
             		canInitializeTenant(tenantId)) {
             	 RegistryUtils.initializeTenant(service, tenantId);
+                initializedTenants.add(tenantId);
             }
         }
 

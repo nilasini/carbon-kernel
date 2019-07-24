@@ -27,6 +27,7 @@ public final class HazelcastConstants {
     public static final String MGT_CENTER_URL = "mgtCenterURL";
     public static final String LICENSE_KEY = "licenseKey";
     public static final String CLUSTERING_MESSAGE_TOPIC = "$clustering.message.topic";
+    public static final String CLUSTER_IDEMPOTENT_NON_RELIABLE_MESSAGE_TOPIC = "$carbon.idempotent.message.topic";
     public static final String GROUP_MGT_CMD_TOPIC = ".group.mgt.cmd.topic";
     public static final String CONTROL_COMMAND_TOPIC = "$control.$command.$topic";
     public static final String GROUP_PASSWORD = "groupPassword";
@@ -36,6 +37,10 @@ public final class HazelcastConstants {
     public static final String AWS_MEMBERSHIP_SCHEME = "aws";
 
     public static final String CLUSTER_COORDINATOR_LOCK = "$coordinator#@lock";
+
+    public static final String CONFIG_XML_PATH_PROP = "hazelcast.config";
+
+    public static final String CONFIG_XML_NAME = "hazelcast.xml";
 
     private HazelcastConstants() {
     }

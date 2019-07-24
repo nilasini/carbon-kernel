@@ -6,6 +6,13 @@ import org.apache.catalina.startup.Tomcat;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
+import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.carbon.base.api.ServerConfigurationService;
 import org.wso2.carbon.tomcat.CarbonTomcatException;
 import org.wso2.carbon.tomcat.api.CarbonTomcatService;
@@ -13,18 +20,9 @@ import org.wso2.carbon.tomcat.ext.transport.ServletTransportManager;
 import org.wso2.carbon.tomcat.ext.utils.URLMappingHolder;
 
 import java.io.File;
+import java.nio.file.Paths;
 
-/**
- * @scr.component name="tomcat.service.comp" immediate="true"
- * @scr.reference name="server.configuration.service"
- * interface="org.wso2.carbon.base.api.ServerConfigurationService"
- * cardinality="1..1" policy="dynamic" bind="setServerConfigurationService"
- * unbind="unsetServerConfigurationService"
- * @scr.reference name="tomcat.service.provider"
- * interface="org.wso2.carbon.tomcat.api.CarbonTomcatService"
- * cardinality="1..1" policy="dynamic" bind="setCarbonTomcatService"
- * unbind="unsetCarbonTomcatService"
- */
+@Component(name = "tomcat.service.comp", immediate = true)
 public class CarbonTomcatServiceComponent {
     private static Log log = LogFactory.getLog(CarbonTomcatServiceComponent.class);
     private String webContextRoot;
@@ -35,6 +33,7 @@ public class CarbonTomcatServiceComponent {
      *
      * @param componentContext injected by OSGi DS framework
      */
+    @Activate
     protected void activate(ComponentContext componentContext) {
         CarbonTomcatService carbonTomcatService = CarbonTomcatServiceHolder.getCarbonTomcatService();
         ServerConfigurationService serverConfigurationService = CarbonTomcatServiceHolder.getServerConfigurationService();
@@ -48,9 +47,14 @@ public class CarbonTomcatServiceComponent {
         if (log.isDebugEnabled()) {
             log.debug("webContextRoot : " + webContextRoot);
         }
-        String carbonHome = System.getProperty("carbon.home");
-        String carbonWebAppDir = carbonHome + File.separator + "repository" + File.separator +"conf"
-                +File.separator+"tomcat"+File.separator+"carbon";
+        String carbonConfigHome = System.getProperty(CarbonBaseConstants.CARBON_CONFIG_DIR_PATH);
+        String carbonWebAppDir;
+        if (carbonConfigHome == null) {
+            String carbonHome = System.getProperty(CarbonBaseConstants.CARBON_HOME);
+            carbonWebAppDir = Paths.get(carbonHome, "repository", "conf", "tomcat", "carbon").toString();
+        } else {
+            carbonWebAppDir = Paths.get(carbonConfigHome, "tomcat", "carbon").toString();
+        }
         /*acquiring the thread context classLoader, so that we can swap the default, threadContextClassLoader of
          tomcat transport listeners (web-app classLoader) during the service method invocation in {@link DelegationServlet}
          */
@@ -76,6 +80,7 @@ public class CarbonTomcatServiceComponent {
     }
 
     @SuppressWarnings("unused")
+    @Deactivate
     protected void deactivate(ComponentContext componentContext) {
         try {
             carbonContext.stop();
@@ -87,6 +92,8 @@ public class CarbonTomcatServiceComponent {
     }
 
     @SuppressWarnings("unused")
+    @Reference(name = "server.configuration.service", cardinality = ReferenceCardinality.MANDATORY, policy = ReferencePolicy.DYNAMIC, 
+        unbind = "unsetServerConfigurationService")
     protected void setServerConfigurationService(ServerConfigurationService serverConfiguration) {
         CarbonTomcatServiceHolder.setServerConfigurationService(serverConfiguration);
     }
@@ -97,6 +104,8 @@ public class CarbonTomcatServiceComponent {
     }
 
     @SuppressWarnings("unused")
+    @Reference(name = "tomcat.service.provider", cardinality = ReferenceCardinality.MANDATORY, policy = ReferencePolicy.DYNAMIC, 
+    unbind = "unsetCarbonTomcatService")
     protected void setCarbonTomcatService(CarbonTomcatService carbonTomcatService) {
         CarbonTomcatServiceHolder.setCarbonTomcatService(carbonTomcatService);
     }

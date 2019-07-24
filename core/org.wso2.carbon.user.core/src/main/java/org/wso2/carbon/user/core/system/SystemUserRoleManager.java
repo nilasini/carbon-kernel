@@ -20,33 +20,40 @@ package org.wso2.carbon.user.core.system;
 import org.apache.axis2.util.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.utils.Secret;
 import org.wso2.carbon.user.core.UserCoreConstants;
 import org.wso2.carbon.user.core.UserStoreException;
 import org.wso2.carbon.user.core.util.DatabaseUtil;
 import org.wso2.carbon.user.core.util.UserCoreUtil;
+import org.wso2.carbon.utils.UnsupportedSecretTypeException;
 import org.wso2.carbon.utils.dbcreator.DatabaseCreator;
 
 import javax.sql.DataSource;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Random;
+import java.security.SecureRandom;
+
+import static org.wso2.carbon.user.core.constants.UserCoreErrorConstants.ErrorMessages.ERROR_CODE_DUPLICATE_WHILE_ADDING_A_SYSTEM_ROLE;
+import static org.wso2.carbon.user.core.constants.UserCoreErrorConstants.ErrorMessages.ERROR_CODE_DUPLICATE_WHILE_ADDING_A_SYSTEM_USER;
+import static org.wso2.carbon.user.core.constants.UserCoreErrorConstants.ErrorMessages.ERROR_CODE_DUPLICATE_WHILE_WRITING_TO_DATABASE;
 
 public class SystemUserRoleManager {
 
     private static Log log = LogFactory.getLog(SystemUserRoleManager.class);
     int tenantId;
     private DataSource dataSource;
-    private Random random = new Random();
+    private static final String SHA_1_PRNG = "SHA1PRNG";
+
     public SystemUserRoleManager(DataSource dataSource, int tenantId) throws UserStoreException {
         super();
         this.dataSource = dataSource;
@@ -85,13 +92,26 @@ public class SystemUserRoleManager {
             if (log.isDebugEnabled()) {
                 log.debug(errorMessage, e);
             }
-            throw new UserStoreException(errorMessage, e);
+            if (e instanceof SQLIntegrityConstraintViolationException) {
+                // Duplicate entry
+                throw new UserStoreException(e.getMessage(), ERROR_CODE_DUPLICATE_WHILE_ADDING_A_SYSTEM_ROLE.getCode(), e);
+            } else {
+                // Other SQL Exception
+                throw new UserStoreException(e.getMessage(), e);
+            }
         } catch (Exception e) {
             String errorMessage = "Error occurred while getting database type from DB connection";
             if (log.isDebugEnabled()) {
                 log.debug(errorMessage, e);
             }
-            throw new UserStoreException(errorMessage, e);
+            if (e instanceof UserStoreException && ERROR_CODE_DUPLICATE_WHILE_WRITING_TO_DATABASE.getCode().equals(((UserStoreException) e)
+                    .getErrorCode())) {
+                // Duplicate entry
+                throw new UserStoreException(e.getMessage(), ERROR_CODE_DUPLICATE_WHILE_ADDING_A_SYSTEM_ROLE.getCode(), e);
+            } else {
+                // Other SQL Exception
+                throw new UserStoreException(e.getMessage(), e);
+            }
         } finally {
             DatabaseUtil.closeAllConnections(dbConnection);
         }
@@ -340,14 +360,20 @@ public class SystemUserRoleManager {
                               String[] roleList) throws UserStoreException {
 
         Connection dbConnection = null;
-        String password = (String) credential;
+        Secret credentialObj = null;
+        try {
+            credentialObj = Secret.getSecret(credential);
+        } catch (UnsupportedSecretTypeException e) {
+            throw new UserStoreException("Unsupported credential type", e);
+        }
+
         try {
             dbConnection = DatabaseUtil.getDBConnection(dataSource);
             String sqlStmt1 = SystemJDBCConstants.ADD_USER_SQL;
 
             String saltValue = null;
             try {
-                SecureRandom secureRandom = SecureRandom.getInstance(UserCoreConstants.SHA_1_PRNG);
+                SecureRandom secureRandom = SecureRandom.getInstance(SHA_1_PRNG);
                 byte[] bytes = new byte[16];
                 //secureRandom is automatically seeded by calling nextBytes
                 secureRandom.nextBytes(bytes);
@@ -356,7 +382,7 @@ public class SystemUserRoleManager {
                 throw new RuntimeException("SHA1PRNG algorithm could not be found.");
             }
 
-            password = this.preparePassword(password, saltValue);
+            String password = this.preparePassword(credentialObj, saltValue);
 
             this.updateStringValuesToDatabase(dbConnection, sqlStmt1, userName, password,
                     saltValue, false, new Date(), tenantId);
@@ -376,8 +402,16 @@ public class SystemUserRoleManager {
             if (log.isDebugEnabled()) {
                 log.debug(e.getMessage(), e);
             }
-            throw new UserStoreException(e.getMessage(), e);
+            if (e instanceof UserStoreException && ERROR_CODE_DUPLICATE_WHILE_WRITING_TO_DATABASE.getCode().equals(((UserStoreException) e)
+                    .getErrorCode())) {
+                // Duplicate entry
+                throw new UserStoreException(e.getMessage(), ERROR_CODE_DUPLICATE_WHILE_ADDING_A_SYSTEM_USER.getCode(), e);
+            } else {
+                // Other SQL Exception
+                throw new UserStoreException(e.getMessage(), e);
+            }
         } finally {
+            credentialObj.clear();
             DatabaseUtil.closeAllConnections(dbConnection);
         }
     }
@@ -516,18 +550,17 @@ public class SystemUserRoleManager {
 //        }
 //    }
 
-    private String preparePassword(String password, String saltValue) throws UserStoreException {
+    private String preparePassword(Secret password, String saltValue) throws UserStoreException {
         try {
-            String digestInput = password;
             if (saltValue != null) {
-                digestInput = password + saltValue;
+                password.addChars(saltValue.toCharArray());
             }
-            MessageDigest dgst = MessageDigest.getInstance("SHA-256");
-            byte[] byteValue = dgst.digest(digestInput.getBytes());
-            password = Base64.encode(byteValue);
-            return password;
+
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] byteValue = digest.digest(password.getBytes());
+            return Base64.encode(byteValue);
         } catch (NoSuchAlgorithmException e) {
-            String errorMessage = "Error occurred while preparing password : " + password;
+            String errorMessage = "Error occurred while preparing password";
             if (log.isDebugEnabled()) {
                 log.debug(errorMessage, e);
             }
@@ -579,7 +612,14 @@ public class SystemUserRoleManager {
             if (log.isDebugEnabled()) {
                 log.debug(e.getMessage(), e);
             }
-            throw new UserStoreException(e.getMessage(), e);
+
+            if (e instanceof SQLIntegrityConstraintViolationException) {
+                // Duplicate entry
+                throw new UserStoreException(e.getMessage(), ERROR_CODE_DUPLICATE_WHILE_WRITING_TO_DATABASE.getCode(), e);
+            } else {
+                // Other SQL Exception
+                throw new UserStoreException(e.getMessage(), e);
+            }
         } finally {
             if (localConnection) {
                 DatabaseUtil.closeAllConnections(dbConnection);

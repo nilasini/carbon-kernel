@@ -27,6 +27,8 @@ import javax.xml.parsers.*;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.xerces.impl.Constants;
+import org.apache.xerces.util.SecurityManager;
 import org.w3c.dom.*;
 import org.wso2.carbon.core.bootup.validator.ConfigurationValidator;
 import org.wso2.carbon.utils.CarbonUtils;
@@ -35,6 +37,7 @@ import org.xml.sax.SAXException;
 /**
  * This class is used to process config_validation.xml parameters
  */
+@Deprecated
 public class ConfigValidationXMLProcessor {
 
 	public static final String CONFIG_VALIDATION_XML = "config-validation.xml";
@@ -46,6 +49,7 @@ public class ConfigValidationXMLProcessor {
 	public static final String ID_ATTRIBUTE = "id";
 	public static final String CLASS_ATTRIBUTE = "class";
 	public static final String VALIDATOR_ENABLED_ATTRIBUTE = "enabled";
+	private static final int ENTITY_EXPANSION_LIMIT = 0;
 
 	// boolean to activate/deactivate bootup validator
 	private static boolean activate = false;
@@ -57,10 +61,33 @@ public class ConfigValidationXMLProcessor {
 
 	public void parseConfigValidationXml() throws ParserConfigurationException, SAXException,
 	                                      IOException {
-		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+		DocumentBuilderFactory dbf = getSecuredDocumentBuilder();
 		DocumentBuilder db = dbf.newDocumentBuilder();
 		dom = db.parse(getConfigRecommendationsXML());
 		parseDocument();
+	}
+
+	private static DocumentBuilderFactory getSecuredDocumentBuilder() {
+
+		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+		dbf.setNamespaceAware(true);
+		dbf.setXIncludeAware(false);
+		dbf.setExpandEntityReferences(false);
+		try {
+			dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE, false);
+			dbf.setFeature(Constants.SAX_FEATURE_PREFIX + Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE, false);
+			dbf.setFeature(Constants.XERCES_FEATURE_PREFIX + Constants.LOAD_EXTERNAL_DTD_FEATURE, false);
+		} catch (ParserConfigurationException e) {
+			log.error(
+					"Failed to load XML Processor Feature " + Constants.EXTERNAL_GENERAL_ENTITIES_FEATURE + " or " +
+							Constants.EXTERNAL_PARAMETER_ENTITIES_FEATURE + " or " + Constants.LOAD_EXTERNAL_DTD_FEATURE);
+		}
+
+		SecurityManager securityManager = new SecurityManager();
+		securityManager.setEntityExpansionLimit(ENTITY_EXPANSION_LIMIT);
+		dbf.setAttribute(Constants.XERCES_PROPERTY_PREFIX + Constants.SECURITY_MANAGER_PROPERTY, securityManager);
+
+		return dbf;
 	}
 
 	private static String getConfigRecommendationsXML() {

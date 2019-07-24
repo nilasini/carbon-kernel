@@ -36,17 +36,17 @@ public class UserStoreConfigConstants {
     public static final String userRolesCacheEnabledDescription = "This is to indicate whether to cache the role list of a user";
     public static final String SCIMEnabled = "SCIMEnabled";
     public static final String SCIMEnabledDescription = "Whether SCIM is enabled for the user store";
-    public static final String displayNameAttribute = "DisplayNameAttribute";
-    public static final String displayNameAttributeDescription = "Attribute name to display as the Display Name";
-    public static final String CASE_SENSITIVE_USERNAME = "CaseSensitiveUsername";
-    public static final String CASE_SENSITIVE_USERNAME_DESCRIPTION = "Whether the username is case sensitive or not";
-
+    public static final String claimOperationsSupported = "ClaimOperationsSupported";
+    public static final String claimOperationsSupportedDescription = "Whether the userstore supports claim read and write";
+    public static final String getClaimOperationsSupportedDisplayName = "Claim Operations Supported";
 
     //Mandatory to LDAP user stores
     public static final String connectionURL = "ConnectionURL";
     public static final String connectionURLDescription = "Connection URL for the user store";
     public static final String connectionName = "ConnectionName";
-    public static final String connectionNameDescription = "This should be the DN (Distinguish Name) of the admin user in LDAP";
+    public static final String connectionNameDescription = "This should be a DN (Distinguish Name) of a user with " +
+                                                           "sufficient permissions to perform operations on users " +
+                                                           "and roles in LDAP";
     public static final String connectionPassword = "ConnectionPassword";
     public static final String connectionPasswordDescription = "Password of the admin user";
     public static final String userSearchBase = "UserSearchBase";
@@ -61,18 +61,11 @@ public class UserStoreConfigConstants {
     public static final String userEntryObjectClass = "UserEntryObjectClass";
     public static final String userEntryObjectClassDescription = "Object Class used to construct user entries";
     public static final String passwordJavaScriptRegEx = "PasswordJavaScriptRegEx";
-    public static final String passwordJavaRegEx= "PasswordJavaRegEx";
-    public static final String passwordJavaRegExViolationErrorMsg= "PasswordJavaRegExViolationErrorMsg";
-    public static final String passwordJavaRegExViolationErrorMsgDescription= "Error message when the Password is " +
-            "not matched with passwordJavaRegEx";
-    public static final String passwordJavaRegExDescription = "Policy that defines the password format in backend";
     public static final String passwordJavaScriptRegExDescription = "Policy that defines the password format";
-    public static final String usernameJavaScriptRegEx = "UsernameJavaScriptRegEx";
+    public static final String usernameJavaScriptRegEx = "UserNameJavaScriptRegEx";
     public static final String usernameJavaScriptRegExDescription = "The regular expression used by the front-end components for username validation";
-    public static final String usernameJavaRegEx = "UsernameJavaRegEx";
+    public static final String usernameJavaRegEx = "UserNameJavaRegEx";
     public static final String usernameJavaRegExDescription = "A regular expression to validate user names";
-    public static final String usernameJavaRegExViolationErrorMsg = "UsernameJavaRegExViolationErrorMsg";
-    public static final String usernameJavaRegExViolationErrorMsgDescription = "Error message when the Username is not matched with UsernameJavaRegEx";
     public static final String roleNameJavaScriptRegEx = "RoleNameJavaScriptRegEx";
     public static final String roleNameJavaScriptRegExDescription = "The regular expression used by the front-end components for role name validation";
     public static final String roleNameJavaRegEx = "RoleNameJavaRegEx";
@@ -98,8 +91,6 @@ public class UserStoreConfigConstants {
     public static final String groupNameListFilter = "GroupNameListFilter";
     public static final String groupNameListFilterDescription = "Filtering criteria for listing all the group entries in LDAP";
     public static final String groupNameAttribute = "GroupNameAttribute";
-    public static final String roleDNPattern = "roleDNPattern";
-    public static final String roleDNPatternDescription = "The patten for role's DN. It can be defined to improve the LDAP search";
     public static final String groupNameAttributeDescription = "Attribute used for uniquely identifying a user entry";
     public static final String groupNameSearchFilter = "GroupNameSearchFilter";
     public static final String groupNameSearchFilterDescription = "Filtering criteria for searching a particular group entry";
@@ -112,11 +103,11 @@ public class UserStoreConfigConstants {
     public static final String connectionPoolingEnabled = "ConnectionPoolingEnabled";
     public static final String connectionPoolingEnabledDescription = "Set this property to enable LDAP connection " +
             "pooling.";
-    public static final String LDAPConnectionTimeout = "LDAPConnectionTimeout";
-    public static final String LDAPConnectionTimeoutDescription = "LDAP Connection Timeout";
-
-
-    public static final String BULK_IMPORT_SUPPORT = "BulkImportSupported";
-    public static final String readTimeout = "ReadTimeout";
-    public static final String readTimeoutDescription = "Configure this to define the read timeout for LDAP operations";
+    public static final String lDAPInitialContextFactory = "LDAPInitialContextFactory";
+    public static final String lDAPInitialContextFactoryDescription = "The property to set LDAP Initial Context Factory";
+    // Property to enable TLS connection with LDAP server using StartTLS extended operation.
+    public static final String STARTTLS_ENABLED = "StartTLSEnabled";
+    public static final String STARTTLS_ENABLED_DISPLAY_NAME = "Enable StartTLS";
+    public static final String STARTTLS_ENABLED_DESCRIPTION = "Enable secure connection by using " +
+            "StartTLS extended operation in LDAP";
 }

@@ -53,7 +53,7 @@ public class HybridRoleAuthorizationTest extends BaseTestCase {
         String modifiedRoleName = UserCoreUtil.addDomainToName(UserCoreUtil.removeDomainFromName(roleName),
                 UserCoreUtil.extractDomainFromName(roleName).toLowerCase());
 
-        Assert.assertNull(treeNode.isRoleAuthorized(modifiedRoleName, PermissionTreeUtil.actionToPermission(actionConsume)));
+        Assert.assertTrue(treeNode.isRoleAuthorized(modifiedRoleName, PermissionTreeUtil.actionToPermission(actionConsume)));
 
     }
 
@@ -69,7 +69,7 @@ public class HybridRoleAuthorizationTest extends BaseTestCase {
         String modifiedRoleName = UserCoreUtil.addDomainToName(UserCoreUtil.removeDomainFromName(roleName),
                 UserCoreUtil.extractDomainFromName(roleName).toUpperCase());
 
-        Assert.assertNull(treeNode.isRoleAuthorized(modifiedRoleName, PermissionTreeUtil.actionToPermission(actionConsume)));
+        Assert.assertTrue(treeNode.isRoleAuthorized(modifiedRoleName, PermissionTreeUtil.actionToPermission(actionConsume)));
     }
 
     public void testLowerCaseRoleName() throws Exception {

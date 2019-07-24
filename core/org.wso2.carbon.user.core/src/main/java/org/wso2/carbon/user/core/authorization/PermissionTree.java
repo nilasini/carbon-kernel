@@ -24,15 +24,11 @@ import org.wso2.carbon.registry.api.GhostResource;
 import org.wso2.carbon.user.core.UserCoreConstants;
 import org.wso2.carbon.user.core.UserStoreException;
 import org.wso2.carbon.user.core.UserStoreManager;
-import org.wso2.carbon.user.core.common.AbstractUserStoreManager;
 import org.wso2.carbon.user.core.internal.UserStoreMgtDSComponent;
 import org.wso2.carbon.user.core.util.DatabaseUtil;
 import org.wso2.carbon.user.core.util.UserCoreUtil;
+import org.wso2.carbon.utils.xml.StringUtils;
 
-import javax.cache.Cache;
-import javax.cache.CacheManager;
-import javax.cache.Caching;
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -43,11 +39,16 @@ import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import javax.cache.Cache;
+import javax.cache.CacheManager;
+import javax.cache.Caching;
+import javax.sql.DataSource;
 
 public class PermissionTree {
 
     private static final String PERMISSION_CACHE_MANAGER = "PERMISSION_CACHE_MANAGER";
     private static final String PERMISSION_CACHE = "PERMISSION_CACHE";
+    private static final String CASE_INSENSITIVE_USERNAME = "CaseInsensitiveUsername";
     private static Log log = LogFactory.getLog(PermissionTree.class);
     private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
     private final Lock read = readWriteLock.readLock();
@@ -57,6 +58,7 @@ public class PermissionTree {
     protected String cacheIdentifier;
     protected volatile int hashValueOfRootNode;
     protected DataSource dataSource;
+    protected boolean preserveCaseForResources = true;
 
     /**
      * On the server startup, all permissions are populated from the DB and the
@@ -70,6 +72,21 @@ public class PermissionTree {
         this.cacheIdentifier = cacheIdentifier;
         this.tenantId = tenantId;
         this.dataSource = dataSource;
+    }
+
+    /**
+     * On the server startup, all permissions are populated from the DB and the
+     * permission tree is built in memory..
+     * With preserveCaseForResources it will support for both case sensitive and insensitive resources.
+     *
+     * @throws UserStoreException - SQL exceptions
+     */
+    public PermissionTree(String cacheIdentifier, int tenantId, DataSource dataSource, boolean preserveCaseForResources) {
+        root = new TreeNode("/");
+        this.cacheIdentifier = cacheIdentifier;
+        this.tenantId = tenantId;
+        this.dataSource = dataSource;
+        this.preserveCaseForResources = preserveCaseForResources;
     }
 
     /**
@@ -92,7 +109,7 @@ public class PermissionTree {
     }
 
     void authorizeUserInTree(String userName, String resourceId, String action, boolean updateCache) throws UserStoreException {
-        if (!isUsernameCaseSensitive(userName, tenantId)){
+        if (!isCaseSensitiveUsername(userName, tenantId)) {
             userName = userName.toLowerCase();
         }
         write.lock();
@@ -119,7 +136,7 @@ public class PermissionTree {
     }
 
     void denyUserInTree(String userName, String resourceId, String action, boolean updateCache) throws UserStoreException {
-        if (!isUsernameCaseSensitive(userName, tenantId)){
+        if (!isCaseSensitiveUsername(userName, tenantId)) {
             userName = userName.toLowerCase();
         }
         write.lock();
@@ -258,8 +275,7 @@ public class PermissionTree {
      */
     SearchResult getUserPermission(String user, TreeNode.Permission permission, SearchResult sr,
                                    TreeNode node, List<String> pathParts) {
-
-        if (!isUsernameCaseSensitive(user, tenantId)){
+        if (!isCaseSensitiveUsername(user, tenantId)) {
             user = user.toLowerCase();
         }
         read.lock();
@@ -598,6 +614,9 @@ public class PermissionTree {
 
                 Map<String, BitSet> allowRoles = sr.getLastNode().getRoleAllowPermissions();
                 BitSet bs = allowRoles.get(roleName);
+                if (bs == null) {
+                    bs = allowRoles.get(modify(roleName));
+                }
                 if (bs != null) {
                     bs.clear(permission.ordinal());
                 }
@@ -615,15 +634,12 @@ public class PermissionTree {
     }
 
     void clearUserAuthorization(String userName) throws UserStoreException {
-        if (!isUsernameCaseSensitive(userName, tenantId)){
-            userName = userName.toLowerCase();
-        }
         clearUserAuthorization(userName, root);
         invalidateCache(root);
     }
 
     void clearUserAuthorization(String userName, String resourceId, String action) throws UserStoreException {
-        if (!isUsernameCaseSensitive(userName, tenantId)){
+        if (!isCaseSensitiveUsername(userName, tenantId)) {
             userName = userName.toLowerCase();
         }
         write.lock();
@@ -705,6 +721,9 @@ public class PermissionTree {
             Map<String, BitSet> bsAllowed = node.getRoleAllowPermissions();
             for (String role : roles) {
                 BitSet bs = bsAllowed.get(role);
+                if (bs == null) {
+                    bs = bsAllowed.get(modify(role));
+                }
                 if (bs != null && bs.get(permission.ordinal())) {
                     resources.add(currentPath);
                     break;
@@ -756,6 +775,9 @@ public class PermissionTree {
             Map<String, BitSet> denyRoles = node.getRoleDenyPermissions();
 
             BitSet bs = allowRoles.get(roleName);
+            if (bs == null) {
+                bs = allowRoles.get(modify(roleName));
+            }
             if (bs != null) {
                 bs.clear(permission.ordinal());
             }
@@ -792,13 +814,30 @@ public class PermissionTree {
             Map<String, BitSet> denyRoles = node.getRoleDenyPermissions();
 
             BitSet bs = allowRoles.get(roleName);
-            if (bs != null) {
-                allowRoles.remove(roleName);
+            boolean modified = false;
+            if (bs == null) {
+                bs = allowRoles.get(modify(roleName));
+                modified = true;
             }
-
-            bs = denyRoles.get(roleName);
             if (bs != null) {
-                denyRoles.remove(roleName);
+                if (modified) {
+                    allowRoles.remove(modify(roleName));
+                } else {
+                    allowRoles.remove(roleName);
+                }
+            }
+            modified = false;
+            bs = denyRoles.get(roleName);
+            if (bs == null) {
+                bs = denyRoles.get(modify(roleName));
+                modified = true;
+            }
+            if (bs != null) {
+                if (modified) {
+                    denyRoles.remove(modify(roleName));
+                } else {
+                    denyRoles.remove(roleName);
+                }
             }
 
             Map<String, TreeNode> childMap = node.getChildren();
@@ -818,16 +857,34 @@ public class PermissionTree {
         Map<String, BitSet> denyRoles = node.getRoleDenyPermissions();
         write.lock();
         try {
+            boolean modified = false;
             BitSet bs = allowRoles.get(roleName);
+            if (bs == null) {
+                bs = allowRoles.get(modify(roleName));
+                modified = true;
+            }
             if (bs != null) {
-                allowRoles.remove(roleName);
-                allowRoles.put(newRoleName, bs);
+                if (!modified) {
+                    allowRoles.remove(roleName);
+                } else {
+                    allowRoles.remove(modify(roleName));
+                }
+                allowRoles.put(modify(newRoleName), bs);
             }
 
+            modified = false;
             bs = denyRoles.get(roleName);
+            if (bs == null) {
+                bs = denyRoles.get(modify(roleName));
+                modified = true;
+            }
             if (bs != null) {
-                denyRoles.remove(roleName);
-                denyRoles.put(newRoleName, bs);
+                if (!modified) {
+                    denyRoles.remove(roleName);
+                } else {
+                    denyRoles.remove(modify(roleName));
+                }
+                denyRoles.put(modify(newRoleName), bs);
             }
 
             Map<String, TreeNode> childMap = node.getChildren();
@@ -844,6 +901,9 @@ public class PermissionTree {
 
 
     private void clearUserAuthorization(String userName, TreeNode node) {
+        if (!isCaseSensitiveUsername(userName, tenantId)) {
+            userName = userName.toLowerCase();
+        }
         write.lock();
         try {
             Map<String, BitSet> allowUsers = node.getUserAllowPermissions();
@@ -898,6 +958,17 @@ public class PermissionTree {
      * @throws org.wso2.carbon.user.core.UserStoreException throws if fail to update permission tree from DB
      */
     void updatePermissionTree() throws UserStoreException {
+        updatePermissionTree("");
+    }
+
+    /**
+     * Update permission tree from database for a given resource id if permission tree is already cached.
+     * If permission tree isn't cached, then this method will load full permission tree.
+     *
+     * @param resourceId registry resource path
+     * @throws org.wso2.carbon.user.core.UserStoreException throws if fail to update permission tree from DB
+     */
+    void updatePermissionTree(String resourceId) throws UserStoreException {
         Cache<PermissionTreeCacheKey, GhostResource<TreeNode>> permissionCache = this.getPermissionTreeCache();
         if (permissionCache != null) {
             PermissionTreeCacheKey cacheKey = new PermissionTreeCacheKey(cacheIdentifier, tenantId);
@@ -906,26 +977,102 @@ public class PermissionTree {
                 if (cacheEntry.getResource() == null) {
                     synchronized (this) {
                         cacheEntry = (GhostResource<TreeNode>) permissionCache.get(cacheKey);
-                        if (cacheEntry.getResource() == null) {
+                        if (cacheEntry == null || cacheEntry.getResource() == null) {
                             updatePermissionTreeFromDB();
-                            cacheEntry.setResource(root);
+                            if (cacheEntry == null) {
+                                cacheEntry = new GhostResource<TreeNode>(root);
+                                permissionCache.put(cacheKey, cacheEntry);
+                            } else {
+                                cacheEntry.setResource(root);
+                            }
                             if (log.isDebugEnabled()) {
                                 log.debug("Set resource to true");
                             }
                         }
                     }
+                } else {
+                    if(!StringUtils.isEmpty(resourceId)) {
+                        //If permission tree is cached, only update the permissions of given resource path
+                        synchronized (this) {
+                            updateResourcePermissionsById(resourceId);
+                            cacheEntry.setResource(root);
+                        }
+                    }
                 }
             } else {
                 synchronized (this) {
-                    updatePermissionTreeFromDB();
-                    cacheKey = new PermissionTreeCacheKey(cacheIdentifier, tenantId);
-                    cacheEntry = new GhostResource<TreeNode>(root);
-                    permissionCache.put(cacheKey, cacheEntry);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Loaded from database");
+                    cacheEntry = (GhostResource<TreeNode>) permissionCache.get(cacheKey);
+                    if (cacheEntry == null || cacheEntry.getResource() == null) {
+                        updatePermissionTreeFromDB();
+                        cacheKey = new PermissionTreeCacheKey(cacheIdentifier, tenantId);
+                        cacheEntry = new GhostResource<TreeNode>(root);
+                        try {
+                            permissionCache.put(cacheKey, cacheEntry);
+                        } catch (IllegalStateException e) {
+                            // There is no harm ignoring cache update. as the local cache is already of no use.
+                            // Mis-penalty is low.
+                            String msg = "Error occurred while adding the permission tree to cache while trying to update" +
+                                    " resource: " + resourceId + " in tenant: " + tenantId;
+                            log.warn(msg);
+                            if (log.isDebugEnabled()) {
+                                log.debug(msg, e);
+                            }
+                        }
+                        if (log.isDebugEnabled()) {
+                            log.debug("Permission tree is loaded from database for the resource " + resourceId +
+                                    " in tenant " + tenantId);
+                        }
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Update permission tree from cache.
+     *
+     * @throws org.wso2.carbon.user.core.UserStoreException throws if fail to update permission tree from DB
+     */
+    void updateResourcePermissionsById(String resourceId) throws UserStoreException {
+        Connection dbConnection = null;
+        ResultSet rs = null;
+        PreparedStatement statement = null;
+        try {
+            PermissionTree tree = new PermissionTree();
+            tree.root = this.root;
+            dbConnection = getDBConnection();
+            // Populating role permissions
+            if (preserveCaseForResources) {
+                statement = dbConnection.prepareStatement(DBConstants.GET_EXISTING_ROLE_PERMISSIONS_BY_RESOURCE_ID_CASE_SENSITIVE);
+            } else {
+                statement = dbConnection.prepareStatement(DBConstants.GET_EXISTING_ROLE_PERMISSIONS_BY_RESOURCE_ID);
+            }
+
+            statement.setInt(1, tenantId);
+            statement.setInt(2, tenantId);
+            statement.setString(3, resourceId);
+            rs = statement.executeQuery();
+            write.lock();
+            try {
+                while (rs.next()) {
+                    short allow = rs.getShort(3);
+                    String roleName = rs.getString(1);
+                    String domain = rs.getString(5);
+                    String roleWithDomain = UserCoreUtil.addDomainToName(roleName, domain);
+                    if (allow == UserCoreConstants.ALLOW) {
+                        tree.authorizeRoleInTree(roleWithDomain, rs.getString(2), rs.getString(4), false);
+                    }
+                }
+            } finally {
+                this.root = tree.root;
+                write.unlock();
+            }
+        } catch (SQLException e) {
+            throw new UserStoreException(
+                    "Error loading authorizations. Please check the database. Error message is "
+                            + e.getMessage(), e);
+        } finally {
+            DatabaseUtil.closeAllConnections(dbConnection, rs, statement);
         }
     }
 
@@ -970,7 +1117,11 @@ public class PermissionTree {
         try {
             dbConnection = getDBConnection();
             // Populating role permissions
-            prepStmt1 = dbConnection.prepareStatement(DBConstants.GET_EXISTING_ROLE_PERMISSIONS);
+            if (preserveCaseForResources) {
+                prepStmt1 = dbConnection.prepareStatement(DBConstants.GET_EXISTING_ROLE_PERMISSIONS_CASE_SENSITIVE);
+            } else {
+                prepStmt1 = dbConnection.prepareStatement(DBConstants.GET_EXISTING_ROLE_PERMISSIONS);
+            }
             prepStmt1.setInt(1, tenantId);
             prepStmt1.setInt(2, tenantId);
 
@@ -982,7 +1133,6 @@ public class PermissionTree {
                 String roleName = rs.getString(1);
                 String domain = rs.getString(5);
                 String roleWithDomain = UserCoreUtil.addDomainToName(roleName, domain);
-                roleWithDomain = roleWithDomain.toLowerCase();
 
                 if (allow == UserCoreConstants.ALLOW) {
                     tree.authorizeRoleInTree(roleWithDomain, rs.getString(2), rs.getString(4), false);
@@ -1059,36 +1209,37 @@ public class PermissionTree {
         return dbConnection;
     }
 
-    private boolean isUsernameCaseSensitive(String username, int tenantId){
-        if (UserStoreMgtDSComponent.getRealmService()!= null) {
+    private boolean isCaseSensitiveUsername(String username, int tenantId) {
+
+        if (UserStoreMgtDSComponent.getRealmService() != null) {
             //this check is added to avoid NullPointerExceptions if the osgi is not started yet.
             //as an example when running the unit tests.
             try {
-                UserStoreManager userStoreManager = (UserStoreManager) UserStoreMgtDSComponent.getRealmService()
-                        .getTenantUserRealm(tenantId).getUserStoreManager();
-                UserStoreManager userAvailableUserStoreManager = userStoreManager.getSecondaryUserStoreManager
-                        (getDomainFromName(username));
-                if (userAvailableUserStoreManager instanceof AbstractUserStoreManager) {
-                    return ((AbstractUserStoreManager) userAvailableUserStoreManager).isCaseSensitiveUsername();
-                } else {
-                    return false;
+                if (UserStoreMgtDSComponent.getRealmService().getTenantUserRealm(tenantId) != null) {
+                    UserStoreManager userStoreManager = (UserStoreManager) UserStoreMgtDSComponent.getRealmService()
+                            .getTenantUserRealm(tenantId).getUserStoreManager();
+                    UserStoreManager userAvailableUserStoreManager = userStoreManager.getSecondaryUserStoreManager
+                            (UserCoreUtil.extractDomainFromName(username));
+                    String isUsernameCaseInsensitiveString = userAvailableUserStoreManager.getRealmConfiguration()
+                            .getUserStoreProperty(CASE_INSENSITIVE_USERNAME);
+                    return !Boolean.parseBoolean(isUsernameCaseInsensitiveString);
                 }
             } catch (org.wso2.carbon.user.api.UserStoreException e) {
                 if (log.isDebugEnabled()) {
-                    log.debug("Error while reading user store property CaseSensitiveUsername. Considering as false.");
+                    log.debug("Error while reading user store property CaseInsensitiveUsername. Considering as false.");
                 }
             }
         }
-        return false;
+        return true;
     }
 
-    private String getDomainFromName(String name) {
-        int index;
-        if ((index = name.indexOf("/")) > 0) {
-            String domain = name.substring(0, index);
-            return domain;
+    private String modify(String name) {
+        if (!name.contains(UserCoreConstants.DOMAIN_SEPARATOR)) {
+            return name;
         }
-        return UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME;
+        String domain = UserCoreUtil.extractDomainFromName(name);
+        String nameWithoutDomain = UserCoreUtil.removeDomainFromName(name);
+        String modifiedName = UserCoreUtil.addDomainToName(nameWithoutDomain, domain);
+        return modifiedName;
     }
-
 }

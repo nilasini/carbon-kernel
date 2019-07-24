@@ -23,13 +23,14 @@ import org.apache.tomcat.util.file.Matcher;
 import org.apache.tomcat.util.res.StringManager;
 import org.apache.tomcat.util.scan.Constants;
 import org.apache.tomcat.util.scan.StandardJarScanner;
-import org.eclipse.osgi.framework.adaptor.BundleClassLoader;
+import org.eclipse.osgi.internal.loader.ModuleClassLoader;
 
 import javax.servlet.ServletContext;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
 import java.net.*;
+import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -55,8 +56,7 @@ public class CarbonTomcatJarScanner extends StandardJarScanner{
     private static final Set<String> defaultJarsToSkip = new HashSet<String>();
     private static final StringManager sm =
             StringManager.getManager(Constants.Package);
-    private static final String CARBON_PLUGINS_DIR_PATH = System.getProperty("carbon.home") +
-            "/repository/components/plugins";
+    private static final String CARBON_PLUGINS_DIR_PATH;
 
     static {
         String jarList = System.getProperty(Constants.SKIP_JARS_PROPERTY);
@@ -65,6 +65,13 @@ public class CarbonTomcatJarScanner extends StandardJarScanner{
             while (tokenizer.hasMoreElements()) {
                 defaultJarsToSkip.add(tokenizer.nextToken());
             }
+        }
+        //normally we have set this default
+        String pluginsPath = System.getProperty("components.repo");
+        if (pluginsPath == null) {
+            CARBON_PLUGINS_DIR_PATH = Paths.get(System.getProperty("carbon.home"), "repository", "components", "plugins").toString();
+        } else {
+            CARBON_PLUGINS_DIR_PATH = pluginsPath;
         }
     }
 
@@ -215,7 +222,8 @@ public class CarbonTomcatJarScanner extends StandardJarScanner{
                }
                // WSO2 Carbon specific code snippet
                // Setting the plugins directory only if the parent classLoader is a bundleClassLoader.
-               if (loader instanceof BundleClassLoader) {
+               // UPDATE: BundleClassLoader has been refactored into ModuleClassLoader in Luna
+               if (loader instanceof ModuleClassLoader) {
                    File  pluginsDir = new File(CARBON_PLUGINS_DIR_PATH);
                    File[] jarFiles = pluginsDir.listFiles(new FileFilter(){
                        public boolean accept(File file) {
@@ -246,7 +254,7 @@ public class CarbonTomcatJarScanner extends StandardJarScanner{
     * Scan a URL for JARs with the optional extensions to look at all files
     * and all directories.
     */
-    private void process(JarScannerCallback callback, URL url)
+    protected void process(JarScannerCallback callback, URL url)
             throws IOException {
 
         if (log.isTraceEnabled()) {

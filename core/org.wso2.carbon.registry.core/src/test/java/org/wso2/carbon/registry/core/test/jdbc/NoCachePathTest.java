@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * Copyright (c) 2016, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,9 +71,10 @@ public class NoCachePathTest extends BaseTestCase {
         registryContext.registerNoCachePath(path);
         assertTrue("Path is not added as a no cache path", registryContext.isNoCachePath(path));
 
-        // Removes the resource path from no cache path list.
         registryContext.removeNoCachePath(path);
         assertFalse("Path is not removed from no cache path", registryContext.isNoCachePath(path));
+
     }
+
 }
 

@@ -544,6 +544,14 @@ public class EmbeddedRegistry implements Registry {
         } finally {
             if (transactionSucceeded) {
                 commitTransaction();
+                if (registryContext.isNoCachePath(path) && realmService != null) {
+                    try {
+                        realmService.getTenantUserRealm(CurrentSession.getCallerTenantId())
+                                                        .getAuthorizationManager().refreshAllowedRolesForResource(path);
+                    } catch (org.wso2.carbon.user.api.UserStoreException e) {
+                        log.error("Error while refresh the allowed roles for resource", e);
+                    }
+                }
             } else {
                 try {
                     registryContext.getHandlerManager(
@@ -1654,6 +1662,9 @@ public class EmbeddedRegistry implements Registry {
                         String author = resource.getAuthorUserName();
                         if (user.equals(author)) {
                             tagsDAO.removeTags(resource, tag);
+                        } else if (userRealm.getAuthorizationManager().isUserAuthorized(user, path,
+                                ActionConstants.DELETE)) {
+                            tagsDAO.removeTags(resource, tag);
                         } else {
                             tagsDAO.removeTags(resource, tag, user);
                         }
@@ -1668,6 +1679,11 @@ public class EmbeddedRegistry implements Registry {
                 // transaction succeeded
                 transactionSucceeded = true;
             }
+        } catch (UserStoreException e) {
+            String msg = "Failed to check if the user is Authorized to perform a delete operation on registry path: "
+                    + path;
+            log.error(msg, e);
+            throw new RegistryException(msg, e);
         } finally {
             if (transactionSucceeded) {
                 commitTransaction();
@@ -2210,7 +2226,11 @@ public class EmbeddedRegistry implements Registry {
     ////////////////////////////////////////////////////////
 
     public Collection executeQuery(String path, Map parameters) throws RegistryException {
+        if (log.isDebugEnabled()) {
+            log.debug("executingQuery():start with path:" + path + " parameters: " + parameters.toString());
+        }
         boolean transactionSucceeded = false;
+        boolean dbOperationInterrupted = false;
         boolean remote = false;
         if (parameters.get("remote") != null) {
             parameters.remove("remote");
@@ -2219,6 +2239,9 @@ public class EmbeddedRegistry implements Registry {
         RequestContext context = new RequestContext(this, repository, versionRepository);
         Resource query = null;
         try {
+            if (log.isDebugEnabled()) {
+                log.debug("Initialing transaction | thread ID: " + Thread.currentThread().getId());
+            }
             // start the transaction
             beginTransaction();
 
@@ -2308,15 +2331,49 @@ public class EmbeddedRegistry implements Registry {
                 transactionSucceeded = true;
             }
             return output;
+        } catch (RegistryException re) {
+            //log the message and throw again when a Registry Exception occurs
+            Throwable cause = re.getCause();
+            if ((cause != null && cause instanceof ThreadDeath) ||
+                    (cause != null && cause.getCause() != null && cause.getCause() instanceof ThreadDeath)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("executeQuery could not be completed due to ThreadDeath");
+                }
+                dbOperationInterrupted = true;
+            }
+            log.error("Registry Exception occurred while executing the query ", re);
+            throw re;
         } finally {
+            if (log.isDebugEnabled()) {
+                log.debug("bool transactionSucceeded: " + transactionSucceeded + " | thread ID: " +
+                        Thread.currentThread().getId());
+            }
             if (transactionSucceeded) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Invoking commitTransaction()" + " | thread ID: " + Thread.currentThread().getId());
+                }
                 commitTransaction();
             } else {
-                try {
-                    registryContext.getHandlerManager(
-                            HandlerLifecycleManager.ROLLBACK_HANDLER_PHASE).executeQuery(context);
-                } finally {
-                    rollbackTransaction();
+                if (!dbOperationInterrupted) {
+                    try {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Invoking registryContext.getHandlerManager('" + HandlerLifecycleManager
+                                    .ROLLBACK_HANDLER_PHASE + "').executeQuery()  | thread ID: " + Thread
+                                    .currentThread().getId());
+                        }
+                        registryContext.getHandlerManager(
+                                HandlerLifecycleManager.ROLLBACK_HANDLER_PHASE).executeQuery(context);
+                    } finally {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Invoking rollbackTransaction() | thread ID: " + Thread.currentThread().getId());
+                        }
+                        rollbackTransaction();
+                    }
+                } else {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Exception occurred caused by a ThreadDeath ");
+                        log.debug("Not rolling back the transaction since there was an Exception");
+                    }
                 }
             }
         }

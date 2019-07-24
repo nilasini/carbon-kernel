@@ -20,7 +20,10 @@ package org.wso2.carbon.core.encryption;
 
 import org.apache.axiom.om.util.Base64;
 import org.wso2.carbon.base.ServerConfiguration;
+import org.wso2.carbon.context.CarbonContext;
 import org.wso2.carbon.core.util.CryptoException;
+import org.wso2.carbon.registry.core.Resource;
+import org.wso2.carbon.registry.core.session.UserRegistry;
 import org.wso2.carbon.utils.CarbonUtils;
 import org.wso2.securevault.SecretResolver;
 import org.wso2.securevault.SecretResolverFactory;
@@ -34,9 +37,12 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 public class SymmetricEncryption {
@@ -61,7 +67,6 @@ public class SymmetricEncryption {
 
     public void generateSymmetricKey() throws CryptoException {
 
-        FileInputStream fileInputStream = null;
         OutputStream output = null;
         KeyGenerator generator = null;
         String secretAlias;
@@ -79,15 +84,15 @@ public class SymmetricEncryption {
             symmetricKeyEncryptAlgo = serverConfiguration.getFirstProperty("SymmetricEncryption.Algorithm");
             symmetricKeySecureVaultAlias = serverConfiguration.getFirstProperty("SymmetricEncryption.SecureVaultAlias");
 
-
-            String filePath = CarbonUtils.getCarbonHome() + File.separator + "repository" + File.separator +
-                    "resources" + File.separator + "security" + File.separator + "symmetric-key.properties";
+            String filePath = CarbonUtils.getCarbonHome() + File.separator + "repository" + File.separator + "resources" +
+                    File.separator + "security" + File.separator + "symmetric-key.properties";
 
             File file = new File(filePath);
             if (file.exists()) {
-                fileInputStream = new FileInputStream(file);
-                properties = new Properties();
-                properties.load(fileInputStream);
+                try (FileInputStream fileInputStream = new FileInputStream(file)) {
+                    properties = new Properties();
+                    properties.load(fileInputStream);
+                }
 
                 SecretResolver secretResolver = SecretResolverFactory.create(properties);
                 if (symmetricKeySecureVaultAlias == null) {
@@ -123,7 +128,6 @@ public class SymmetricEncryption {
             if (!isSymmetricKeyFromFile) {
                 throw new CryptoException("Error in generating symmetric key. Symmetric key is not available.");
             }
-
         } catch (Exception e) {
             throw new CryptoException("Error in generating symmetric key", e);
         }

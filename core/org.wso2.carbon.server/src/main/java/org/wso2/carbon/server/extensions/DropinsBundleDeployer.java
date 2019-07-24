@@ -17,17 +17,27 @@
 */
 package org.wso2.carbon.server.extensions;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.server.CarbonLaunchExtension;
 import org.wso2.carbon.server.LauncherConstants;
 import org.wso2.carbon.server.util.BundleInfoLine;
 import org.wso2.carbon.server.util.FileUtils;
 import org.wso2.carbon.server.util.Utils;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.jar.JarFile;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Deploy bundles found inside the dropins directory.
@@ -36,7 +46,37 @@ import java.util.jar.JarFile;
  * 3) Add the entry to the bundles.info file.
  */
 public class DropinsBundleDeployer implements CarbonLaunchExtension {
-    private static Log log = LogFactory.getLog(DropinsBundleDeployer.class);
+    private static final Logger logger = Logger.getLogger(DropinsBundleDeployer.class.getName());
+
+    private static String dropinsDirPath;
+    private static String bundlesInfoDirPath;
+    private static final String DEFAULT_BUNDLE_VERSION = "0.0.0";
+
+    static {
+        dropinsDirPath = System.getProperty(LauncherConstants.CARBON_DROPINS_DIR_PATH);
+        String componentPath = System.getProperty(LauncherConstants.CARBON_COMPONENTS_DIR_PATH);
+        String profileName = System.getProperty(LauncherConstants.PROFILE, LauncherConstants.DEFAULT_CARBON_PROFILE);
+
+        if (componentPath == null) {
+            bundlesInfoDirPath = Paths.get("repository", "components", profileName, "configuration", "org.eclipse.equinox.simpleconfigurator").toString();
+        } else {
+            //setting relative path
+            componentPath = Paths.get(System.getProperty(LauncherConstants.CARBON_HOME)).relativize(Paths.get(componentPath)).toString();
+            bundlesInfoDirPath = Paths.get(componentPath, profileName, "configuration", "org.eclipse.equinox.simpleconfigurator").toString();
+        }
+
+        if (dropinsDirPath == null) {
+            if (componentPath == null) {
+                dropinsDirPath = Paths.get("repository", "components", "dropins").toString();
+            } else {
+                dropinsDirPath = Paths.get(componentPath, "dropins").toString();
+            }
+        } else {
+            //setting relative path, need to remove / sign in dropins/
+            dropinsDirPath = Paths.get(System.getProperty(LauncherConstants.CARBON_HOME)).relativize(Paths.get(dropinsDirPath)).toString();
+        }
+
+    }
 
     /**
      * 1) Extract bundle info from the dropins directory
@@ -47,10 +87,6 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
      */
     public void perform() {
         try {
-            String dropinsDirPath = "repository" + File.separator + "components" + File.separator + "dropins";
-            String profileName = System.getProperty(LauncherConstants.PROFILE, LauncherConstants.DEFAULT_CARBON_PROFILE);
-            String bundlesInfoDirPath = "repository" + File.separator + "components" + File.separator + profileName +
-                    File.separator + "configuration" + File.separator + "org.eclipse.equinox.simpleconfigurator";
 
             //1. Extract the bundle information from the dropins directory.
             File dropinsDir = Utils.getBundleDirectory(dropinsDirPath);
@@ -77,7 +113,7 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
             //4. Update the bundles.info file
             updateBundlesInfoFile(bundlesInfoFile, bundleInfoLineMap);
         } catch (Exception e) {
-            log.error("Error occured while deploying bundles in the dropins directory", e);
+            logger.log(Level.SEVERE, "Error occured while deploying bundles in the dropins directory", e);
         }
     }
 
@@ -92,34 +128,45 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
         ArrayList<BundleInfoLine> bundleInfoArray = new ArrayList<BundleInfoLine>();
 
         for (File file : bundleFileList) {
-            JarFile jarFile = new JarFile(file.getAbsoluteFile());
-            if (jarFile.getManifest() == null || jarFile.getManifest().getMainAttributes() == null) {
-                log.error("Invalid Bundle found in the dropins directory: " + file.getName());
-                continue;
+            try (JarFile jarFile = new JarFile(file.getAbsoluteFile())) {
+                if (jarFile.getManifest() == null || jarFile.getManifest().getMainAttributes() == null) {
+                    logger.log(Level.SEVERE, "Invalid Bundle found in the dropins directory: " + file.getName());
+                    continue;
+                }
+
+                String bundleSymbolicName = jarFile.getManifest().getMainAttributes().
+                        getValue(LauncherConstants.BUNDLE_SYMBOLIC_NAME);
+                String bundleVersion = jarFile.getManifest().getMainAttributes().
+                        getValue(LauncherConstants.BUNDLE_VERSION);
+
+                if (bundleSymbolicName == null || bundleVersion == null) {
+                    logger.log(Level.SEVERE, "Required Bundle manifest headers do not exists: " + file.getAbsoluteFile());
+                    continue;
+                } else {
+                    //BSN can have values like, Bundle-SymbolicName: com.example.acme;singleton:=true
+                    // refer - http://wiki.osgi.org/wiki/Bundle-SymbolicName for more details
+                    if (bundleSymbolicName.contains(";")) {
+                        bundleSymbolicName = bundleSymbolicName.split(";")[0];
+                    }
+                }
+                //According to the OSGi spec, Bundle-Version is an optional header; the default value is 0.0.0
+                if (bundleVersion == null) {
+                    bundleVersion = DEFAULT_BUNDLE_VERSION;
+                }
+
+                //Checking whether this bundle is a fragment or not.
+                boolean isFragment = jarFile.getManifest().getMainAttributes().
+                        getValue(LauncherConstants.FRAGMENT_HOST) != null;
+
+                String dropinsAbsolutePath = System.getProperty(LauncherConstants.CARBON_DROPINS_DIR_PATH);
+                if (dropinsAbsolutePath != null) {
+                    String compoenentProfilePath = Paths.get(Utils.getCarbonComponentRepo().getPath(), System.getProperty(LauncherConstants.PROFILE)).toString();
+                    String relativePathToDropinsFolder = Paths.get(compoenentProfilePath).relativize(Paths.get(dropinsAbsolutePath)).toString();
+                    bundleInfoArray.add(new BundleInfoLine(bundleSymbolicName, bundleVersion, Paths.get(relativePathToDropinsFolder, file.getName()).toString(), 4, isFragment));
+                } else {
+                    bundleInfoArray.add(new BundleInfoLine(bundleSymbolicName, bundleVersion, Paths.get("..", "dropins", file.getName()).toString(), 4, isFragment));
+                }
             }
-
-            String bundleSymbolicName = jarFile.getManifest().getMainAttributes().
-                    getValue(LauncherConstants.BUNDLE_SYMBOLIC_NAME);
-	        String bundleVersion = jarFile.getManifest().getMainAttributes().
-			        getValue(LauncherConstants.BUNDLE_VERSION);
-
-            if (bundleSymbolicName == null || bundleVersion == null) {
-                log.error("Required Bundle manifest headers do not exists: " + file.getAbsoluteFile());
-                continue;
-            } else {
-	            //BSN can have values like, Bundle-SymbolicName: com.example.acme;singleton:=true
-	            // refer - http://wiki.osgi.org/wiki/Bundle-SymbolicName for more details
-	            if (bundleSymbolicName.contains(";")) {
-		            bundleSymbolicName = bundleSymbolicName.split(";")[0];
-	            }
-            }
-
-            //Checking whether this bundle is a fragment or not.
-            boolean isFragment = jarFile.getManifest().getMainAttributes().
-                    getValue(LauncherConstants.FRAGMENT_HOST) != null;
-
-            bundleInfoArray.add(new BundleInfoLine(bundleSymbolicName, bundleVersion,
-                    "../dropins/" + file.getName(), 4, isFragment));
         }
         return bundleInfoArray.toArray(new BundleInfoLine[bundleInfoArray.size()]);
     }
@@ -191,7 +238,7 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
                 try {
                     reader.close();
                 } catch (IOException e) {
-                    log.warn("Unable to close the InputStream " + e.getMessage(), e);
+                    logger.log(Level.WARNING, "Unable to close the InputStream " + e.getMessage(), e);
                 }
             }
         }
@@ -219,9 +266,7 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
                 bundleInfoLineList = new ArrayList<BundleInfoLine>();
                 bundleInfoLineList.add(newBundleInfoLine);
                 existingBundleInfoLineMap.put(symbolicName, bundleInfoLineList);
-                if (log.isDebugEnabled()) {
-                        log.debug("Deploying bundle: " + newBundleInfoLine.getBundlePath());
-                }
+                logger.log(Level.FINE, "Deploying bundle: " + newBundleInfoLine.getBundlePath());
 
             } else {
                 //Bundle symbolic names exists. Now we need to check whether their versions are equal.
@@ -234,7 +279,7 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
                         if (existingBundleInfoLIne.isFragment() ^ isFragment) {
                             //This means fragment-ness property is not equal.
                             if (!existingBundleInfoLIne.getBundlePath().equals(newBundleInfoLine.getBundlePath())) {
-                                log.warn("Ignoring the deployment of bundle: " + newBundleInfoLine.getBundlePath() +
+                                logger.log(Level.WARNING, "Ignoring the deployment of bundle: " + newBundleInfoLine.getBundlePath() +
                                         ", because it is already available in the system: " +
                                         existingBundleInfoLIne.getBundlePath() +
                                         ". Bundle-SymbolicName and Bundle-Version headers are identical ");
@@ -247,17 +292,15 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
                             //need to add it again. But if the locations are different we should throw a WARN.
                             if (existingBundleInfoLIne.getBundlePath().equals(newBundleInfoLine.getBundlePath())) {
                                 //We have a exact match. So we don't need to add it again.
-                                if (log.isDebugEnabled()) {
-                                    log.debug("Deploying bundle: " + newBundleInfoLine.getBundlePath());
-                                }
+                                logger.log(Level.FINE, "Deploying bundle: " + newBundleInfoLine.getBundlePath());
                                 found = true;
                                 break;
 
                             } else {
                                 //We have an exact match, but their locations are different.
-                                log.warn("Ignoring the deployment of bundle: " + newBundleInfoLine.getBundlePath() +
+                                logger.log(Level.WARNING, "Ignoring the deployment of bundle: " + newBundleInfoLine.getBundlePath() +
                                         ", because it is already available in the system: " +
-                                        existingBundleInfoLIne.getBundlePath()+
+                                        existingBundleInfoLIne.getBundlePath() +
                                         ". Bundle-SymbolicName and Bundle-Version headers are identical ");
                                 found = true;
                                 break;
@@ -273,9 +316,7 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
                 if (!found) {
                     //Dropins bundle is not available in the system. Lets add it.
                     bundleInfoLineList.add(newBundleInfoLine);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Deploying bundle: " + newBundleInfoLine.getBundlePath());
-                    }
+                    logger.log(Level.FINE, "Deploying bundle: " + newBundleInfoLine.getBundlePath());
                 }
             }
         }
@@ -330,7 +371,7 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
             FileUtils.copyFile(new File(tempBundlesInfoFilePath), bundlesInfoFile, false);
 
         } catch (IOException e) {
-            log.error(e.getMessage(), e);
+            logger.log(Level.SEVERE, e.getMessage(), e);
             throw new Exception("Error occurred while updating the bundles.info file.", e);
 
         } finally {
@@ -339,7 +380,7 @@ public class DropinsBundleDeployer implements CarbonLaunchExtension {
                     writer.close();
                 }
             } catch (IOException e) {
-                log.warn("Unable to close the OutputStream " + e.getMessage(), e);
+                logger.log(Level.WARNING, "Unable to close the OutputStream " + e.getMessage(), e);
             }
         }
     }
