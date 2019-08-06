@@ -349,7 +349,10 @@ public class AdvancedJDBCRealmTest extends BaseTestCase {
         admin.addRole("role2", null, null);
         admin.addRole("role3", null, null);
         admin.addRole("role4", null, null);
-        assertEquals(6, admin.getRoleNames().length);//admin,everyone,role1,role2,role3,role4
+        admin.addRole("Internal/role5", null, null);
+        admin.addRole("Application/role6", null, null);
+        assertEquals(8,
+                admin.getRoleNames().length);//admin,everyone,role1,role2,role3,role4,Internal/role5,Application/role6
 
         //Test delete role method
         assertTrue(admin.isExistingRole("role3"));

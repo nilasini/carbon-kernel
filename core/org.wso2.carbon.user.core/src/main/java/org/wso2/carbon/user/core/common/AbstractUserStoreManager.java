@@ -5059,7 +5059,6 @@ public abstract class AbstractUserStoreManager implements UserStoreManager, Pagi
      */
     protected abstract String[] doGetSharedRoleNames(String tenantDomain, String filter,
                                                      int maxItemLimit) throws UserStoreException;
-
     /**
      * TODO This method would returns the role Name actually this must be implemented in interface.
      * As it is not good to change the API in point release. This has been added to Abstract class
@@ -5082,9 +5081,31 @@ public abstract class AbstractUserStoreManager implements UserStoreManager, Pagi
         }
 
         String[] roleList = new String[0];
-
         if (!noInternalRoles && (filter.toLowerCase().startsWith(APPLICATION_DOMAIN.toLowerCase()))) {
             roleList = hybridRoleManager.getHybridRoles(filter);
+        } else if (!noInternalRoles && !isAnInternalRole(filter) && !filter
+                .contains(UserCoreConstants.DOMAIN_SEPARATOR)) {
+            // When domain name is not present in the filter value.
+            if (filter == "*") {
+                roleList = hybridRoleManager.getHybridRoles(filter);
+            } else {
+                // Since Application domain roles are stored in db with the "Application/" prefix, when domain is not
+                // present in the filter, need to append the "Application/" before sending for db query.
+                String[] applicationDomainRoleArray = hybridRoleManager
+                        .getHybridRoles(APPLICATION_DOMAIN + UserCoreConstants.DOMAIN_SEPARATOR + filter);
+                String[] internalDomainRoleArray = hybridRoleManager.getHybridRoles(filter);
+                List<String> internalOnlyList = new ArrayList<>();
+                // When filtering with sw, ew and co there is a possibility of returning results belonging to
+                // Application domain.
+                for (String filteredRole : internalDomainRoleArray) {
+                    if (filteredRole != null && !filteredRole.matches("Application/(.*)")) {
+                        // Create Internal domain only list.
+                        internalOnlyList.add(filteredRole);
+                    }
+                }
+                roleList = UserCoreUtil.combineArrays(applicationDomainRoleArray,
+                        internalOnlyList.toArray(new String[internalOnlyList.size()]));
+            }
         } else if (!noInternalRoles) {
             roleList = hybridRoleManager.getHybridRoles(UserCoreUtil.removeDomainFromName(filter));
         }
