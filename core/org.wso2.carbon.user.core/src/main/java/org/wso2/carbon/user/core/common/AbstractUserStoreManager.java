@@ -6852,6 +6852,53 @@ public abstract class AbstractUserStoreManager implements UserStoreManager, Pagi
         return new PaginatedSearchResult();
     }
 
+    protected PaginatedSearchResult doGetROleList(Condition condition, String profileName, int limit, int offset,
+                                                  String sortBy, String sortOrder) throws UserStoreException {
+
+        return new PaginatedSearchResult();
+    }
+
+    @Override
+    public String[] getRoleList(Condition condition, String domain, String profileName, int limit, int offset, String
+            sortBy, String sortOrder) throws UserStoreException {
+
+        validateCondition(condition);
+        if (StringUtils.isNotEmpty(sortBy) && StringUtils.isNotEmpty(sortOrder)) {
+            throw new UserStoreException("Sorting is not supported.");
+        }
+
+        if (StringUtils.isEmpty(domain)) {
+            domain = UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME;
+        }
+
+        if (StringUtils.isEmpty(profileName)) {
+            profileName = UserCoreConstants.DEFAULT_PROFILE;
+        }
+
+//        handlePreGetUserList(condition, domain, profileName, limit, offset, sortBy, sortOrder);
+//
+//        if (log.isDebugEnabled()) {
+//            log.debug("Pre listener get conditional  user list for domain: " + domain);
+//        }
+
+        String[] filteredRoles = new String[0];
+        UserStoreManager secManager = getSecondaryUserStoreManager(domain);
+        if (secManager != null) {
+            if (secManager instanceof AbstractUserStoreManager) {
+                PaginatedSearchResult users = ((AbstractUserStoreManager) secManager).doGetUserList(condition,
+                        profileName, limit, offset, sortBy, sortOrder);
+                filteredRoles = users.getUsers();
+            }
+        }
+
+        handlePostGetUserList(condition, domain, profileName, limit, offset, sortBy, sortOrder, filteredRoles, false);
+
+        if (log.isDebugEnabled()) {
+            log.debug("post listener get conditional  user list for domain: " + domain);
+        }
+        return filteredRoles;
+    }
+
 
     @Override
     public String[] listUsers(String filter, int limit, int offset) throws UserStoreException {

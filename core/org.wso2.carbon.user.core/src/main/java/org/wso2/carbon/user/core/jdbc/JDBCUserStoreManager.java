@@ -3874,6 +3874,124 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         return result;
     }
 
+    protected PaginatedSearchResult doGetROleList (Condition condition, String profileName, int limit, int offset,
+                                                   String sortBy, String sortOrder) throws UserStoreException {
+
+        boolean isGroupFiltering = false;
+        boolean isUsernameFiltering = false;
+        boolean isClaimFiltering = false;
+        // To identify Mysql multi group filter and multi claim filter.
+        int totalMultiGroupFilters = 0;
+        int totalMulitClaimFitlers = 0;
+
+        PaginatedSearchResult result = new PaginatedSearchResult();
+
+        if (limit == 0) {
+            return result;
+        }
+
+        //Since we support only AND operation get expressions as a list.
+        List<ExpressionCondition> expressionConditions = new ArrayList<>();
+        getExpressionConditions(condition, expressionConditions);
+
+        for (ExpressionCondition expressionCondition : expressionConditions) {
+            if (ExpressionAttribute.ROLE.toString().equals(expressionCondition.getAttributeName())) {
+                isGroupFiltering = true;
+                totalMultiGroupFilters++;
+            } else if (ExpressionAttribute.USERNAME.toString().equals(expressionCondition.getAttributeName())) {
+                isUsernameFiltering = true;
+            } else {
+                isClaimFiltering = true;
+                totalMulitClaimFitlers++;
+            }
+        }
+
+
+        String[] users = new String[0];
+        Connection dbConnection = null;
+        PreparedStatement prepStmt = null;
+        ResultSet rs = null;
+
+        List<String> list = new ArrayList<>();
+        try {
+            dbConnection = getDBConnection();
+            String type = DatabaseCreator.getDatabaseType(dbConnection);
+
+            if (offset <= 0) {
+                offset = 0;
+            } else {
+                offset = offset - 1;
+            }
+
+            if (DB2.equalsIgnoreCase(type)) {
+                int initialOffset = offset;
+                offset = offset + limit;
+                limit = initialOffset + 1;
+            } else if (ORACLE.equalsIgnoreCase(type)) {
+                limit = offset + limit;
+            } else if (MSSQL.equalsIgnoreCase(type)) {
+                int initialOffset = offset;
+                offset = limit + offset;
+                limit = initialOffset + 1;
+            }
+
+            SqlBuilder sqlBuilder = getQueryString(isGroupFiltering, isUsernameFiltering, isClaimFiltering,
+                    expressionConditions, limit, offset, sortBy, sortOrder, profileName, type, totalMultiGroupFilters,
+                    totalMulitClaimFitlers);
+
+            if (MYSQL.equals(type) && totalMultiGroupFilters > 1 && totalMulitClaimFitlers > 1) {
+                String fullQuery = sqlBuilder.getQuery();
+                String[] splits = fullQuery.split("INTERSECT ");
+                int startIndex = 0;
+                int endIndex = 0;
+                for (String query : splits) {
+                    List<String> tempUserList = new ArrayList<>();
+                    int occurance = StringUtils.countMatches(query, QUERY_BINDING_SYMBOL);
+                    endIndex = endIndex + occurance;
+                    prepStmt = dbConnection.prepareStatement(query);
+                    populatePrepareStatement(sqlBuilder, prepStmt, startIndex, endIndex);
+                    rs = prepStmt.executeQuery();
+                    while (rs.next()) {
+                        String name = rs.getString(1);
+                        tempUserList.add(UserCoreUtil.addDomainToName(name, getMyDomainName()));
+                    }
+
+                    if (startIndex == 0) {
+                        list = tempUserList;
+                    } else {
+                        list.retainAll(tempUserList);
+                    }
+                    startIndex += occurance;
+                }
+            } else {
+                prepStmt = dbConnection.prepareStatement(sqlBuilder.getQuery());
+                int occurance = StringUtils.countMatches(sqlBuilder.getQuery(), "?");
+                populatePrepareStatement(sqlBuilder, prepStmt, 0, occurance);
+                rs = prepStmt.executeQuery();
+                while (rs.next()) {
+                    String name = rs.getString(1);
+                    list.add(UserCoreUtil.addDomainToName(name, getMyDomainName()));
+                }
+            }
+
+            if (list.size() > 0) {
+                users = list.toArray(new String[list.size()]);
+            }
+            result.setUsers(users);
+
+        } catch (Exception e) {
+            String msg = "Error occur while doGetUserList for multi attribute searching";
+            if (log.isDebugEnabled()) {
+                log.debug(msg, e);
+            }
+            throw new UserStoreException(msg, e);
+        } finally {
+            DatabaseUtil.closeAllConnections(dbConnection, rs, prepStmt);
+        }
+
+        return result;
+    }
+
     private void populatePrepareStatement(SqlBuilder sqlBuilder, PreparedStatement prepStmt, int startIndex,
                                           int endIndex) throws SQLException {
 

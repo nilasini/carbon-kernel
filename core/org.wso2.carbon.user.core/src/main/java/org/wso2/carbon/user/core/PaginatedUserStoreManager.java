@@ -89,4 +89,7 @@ public interface PaginatedUserStoreManager {
      * @throws UserStoreException
      */
     Map<String, List<String>> getRoleListOfUsers(String[] userNames) throws UserStoreException;
+
+    String[] getRoleList(Condition condition, String domain, String profileName, int limit, int offset, String sortBy,
+                         String sortOrder) throws UserStoreException;
 }
