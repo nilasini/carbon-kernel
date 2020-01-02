@@ -18,6 +18,7 @@ z * Copyright 2005-2007 WSO2, Inc. (http://wso2.com)
 package org.wso2.carbon.user.core.jdbc;
 
 import org.apache.axiom.om.util.Base64;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -32,7 +33,9 @@ import org.wso2.carbon.user.core.UserStoreException;
 import org.wso2.carbon.user.core.claim.ClaimManager;
 import org.wso2.carbon.user.core.common.AbstractUserStoreManager;
 import org.wso2.carbon.user.core.common.PaginatedSearchResult;
+import org.wso2.carbon.user.core.common.RoleBreakdown;
 import org.wso2.carbon.user.core.common.RoleContext;
+import org.wso2.carbon.user.core.constants.UserCoreErrorConstants;
 import org.wso2.carbon.user.core.dto.RoleDTO;
 import org.wso2.carbon.user.core.hybrid.HybridJDBCConstants;
 import org.wso2.carbon.user.core.jdbc.caseinsensitive.JDBCCaseInsensitiveConstants;
@@ -74,11 +77,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.regex.Matcher;
 import javax.sql.DataSource;
 
 import static org.wso2.carbon.user.core.constants.UserCoreErrorConstants.ErrorMessages.ERROR_CODE_DUPLICATE_WHILE_ADDING_A_USER;
 import static org.wso2.carbon.user.core.constants.UserCoreErrorConstants.ErrorMessages.ERROR_CODE_DUPLICATE_WHILE_ADDING_ROLE;
 import static org.wso2.carbon.user.core.constants.UserCoreErrorConstants.ErrorMessages.ERROR_CODE_DUPLICATE_WHILE_WRITING_TO_DATABASE;
+import static org.wso2.carbon.user.core.util.DatabaseUtil.getLoggableSqlString;
 
 public class JDBCUserStoreManager extends AbstractUserStoreManager {
 
@@ -94,11 +99,15 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
 
     protected DataSource jdbcds = null;
     protected Random random = new Random();
+    protected int maximumUserNameListLength = -1;
+    protected int queryTimeout = -1;
 
     private static final String DB2 = "db2";
     private static final String MSSQL = "mssql";
     private static final String ORACLE = "oracle";
     private static final String MYSQL = "mysql";
+
+    private static final int MAX_ITEM_LIMIT_UNLIMITED = -1;
 
     public JDBCUserStoreManager() {
 
@@ -142,6 +151,9 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 writeGroupsEnabled = true;
             }
         }
+
+        maximumUserNameListLength = getMaxUserNameListLength();
+        queryTimeout = getSQLQueryTimeoutLimit();
 
         if (log.isDebugEnabled()) {
             if (writeGroupsEnabled) {
@@ -705,7 +717,6 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         return roles;
     }
 
-
     public String[] doGetUserListOfRole(String roleName, String filter) throws UserStoreException {
 
         RoleContext roleContext = createRoleContext(roleName);
@@ -717,23 +728,65 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
      */
     public String[] getUserListOfJDBCRole(RoleContext ctx, String filter) throws UserStoreException {
 
+        return getUserListOfJDBCRole(ctx, filter, QUERY_MAX_ITEM_LIMIT_ANY);
+    }
+
+    @Override
+    public String[] doGetUserListOfRole(String roleName, String filter, int maxItemLimit) throws UserStoreException {
+
+        RoleContext roleContext = createRoleContext(roleName);
+        return getUserListOfJDBCRole(roleContext, filter, maxItemLimit);
+    }
+
+    /**
+     * Return the list of users belong to the given JDBC role for the given {@link RoleContext}, filter and max item
+     * limit.
+     *
+     * @param ctx {@link RoleContext} corresponding to the JDBC role.
+     * @param filter String filter for the users.
+     * @param maxItemLimit Maximum number of items returned.
+     * @return The list of users matching the provided constraints.
+     * @throws UserStoreException
+     */
+    public String[] getUserListOfJDBCRole(RoleContext ctx, String filter, int maxItemLimit) throws UserStoreException {
+
         String roleName = ctx.getRoleName();
         String[] names = null;
         String sqlStmt = null;
+
+        if (maxItemLimit == 0) {
+            return ArrayUtils.EMPTY_STRING_ARRAY;
+        }
+
+        if (maxItemLimit < 0 || maxItemLimit > maximumUserNameListLength) {
+            maxItemLimit = maximumUserNameListLength;
+        }
+
+        if (StringUtils.isNotEmpty(filter)) {
+            filter = filter.trim();
+            filter = filter.replace("*", "%");
+            filter = filter.replace("?", "_");
+        } else {
+            filter = "%";
+        }
+
         if (!ctx.isShared()) {
-            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.GET_USERS_IN_ROLE);
+            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.GET_USERS_IN_ROLE_FILTER);
             if (sqlStmt == null) {
                 throw new UserStoreException("The sql statement for retrieving user roles is null");
             }
+
             if (sqlStmt.contains(UserCoreConstants.UM_TENANT_COLUMN)) {
                 names =
-                        getStringValuesFromDatabase(sqlStmt, roleName, tenantId, tenantId, tenantId);
+                        getStringValuesFromDatabaseWithConstraints(sqlStmt, maxItemLimit, queryTimeout, filter,
+                                roleName, tenantId, tenantId, tenantId);
             } else {
-                names = getStringValuesFromDatabase(sqlStmt, roleName);
+                names = getStringValuesFromDatabaseWithConstraints(sqlStmt, maxItemLimit, queryTimeout, filter,
+                        roleName);
             }
         } else if (ctx.isShared()) {
-            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.GET_USERS_IN_SHARED_ROLE);
-            names = getStringValuesFromDatabase(sqlStmt, roleName);
+            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.GET_USERS_IN_SHARED_ROLE_FILTER);
+            names = getStringValuesFromDatabaseWithConstraints(sqlStmt, maxItemLimit, queryTimeout, filter, roleName);
         }
 
         List<String> userList = new ArrayList<String>();
@@ -1055,6 +1108,37 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         return values;
     }
 
+    /**
+     * Get {@link String}[] of values from the database for the given SQL query and the constraints.
+     *
+     * @param sqlStmt {@link String} SQL query.
+     * @param maxRows Upper limit to the number of rows returned from the database.
+     * @param queryTimeout SQL query timeout limit in seconds. Zero means there is no limit.
+     * @param params Values passed for the SQL query placeholders.
+     * @return {@link String}[] of results.
+     * @throws UserStoreException
+     */
+    private String[] getStringValuesFromDatabaseWithConstraints(String sqlStmt, int maxRows, int queryTimeout,
+                                                                Object... params) throws UserStoreException {
+
+        if (log.isDebugEnabled()) {
+            String loggableSqlString = getLoggableSqlString(sqlStmt, params);
+            String msg = "Using SQL : " + loggableSqlString + ", and maxRows: " + maxRows + ", and queryTimeout: "
+                    + queryTimeout;
+            log.debug(msg);
+        }
+
+        String[] values;
+        try(Connection dbConnection = getDBConnection()) {
+            values = DatabaseUtil
+                    .getStringValuesFromDatabaseWithConstraints(dbConnection, sqlStmt, maxRows, queryTimeout, params);
+        } catch (SQLException e) {
+            String msg = "Error occurred while accessing the database connection.";
+            throw new UserStoreException(msg, e);
+        }
+        return values;
+    }
+
     private String[] getRoleNamesWithDomain(String sqlStmt, String userName, int tenantId,
                                             boolean appendDn) throws UserStoreException {
 
@@ -1194,14 +1278,14 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
      */
     public boolean doAuthenticate(String userName, Object credential) throws UserStoreException {
 
-        if (!checkUserNameValid(userName)) {
+        if (!isValidUserName(userName)) {
             if (log.isDebugEnabled()) {
                 log.debug("Username validation failed");
             }
             return false;
         }
 
-        if (!checkUserPasswordValid(credential)) {
+        if (!isValidCredentials(credential)) {
             if (log.isDebugEnabled()) {
                 log.debug("Password validation failed");
             }
@@ -1367,7 +1451,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 // Integer[] tenantIds = breakdown.getTenantIds();
 
                 String[] sharedRoles = breakdown.getSharedRoles();
-                Integer[] sharedTenantIds = breakdown.getSharedTenantids();
+                Integer[] sharedTenantIds = breakdown.getSharedTenantIDs();
 
                 String sqlStmt2 = null;
                 String type = DatabaseCreator.getDatabaseType(dbConnection);
@@ -1458,11 +1542,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         }
     }
 
-    /**
-     *
-     */
     public void doAddRole(String roleName, String[] userList, boolean shared) throws UserStoreException {
-
 
         if (shared && isSharedGroupEnabled()) {
             doAddSharedRole(roleName, userList);
@@ -1571,7 +1651,6 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
             DatabaseUtil.closeAllConnections(dbConnection);
         }
     }
-
 
     @Override
     public boolean isSharedRole(String roleName, String roleNameBase) {
@@ -1919,7 +1998,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
 
         // Shared roles and tenant ids
         breakdown.setSharedRoles(sharedRoles.toArray(new String[sharedRoles.size()]));
-        breakdown.setSharedTenantids(sharedTenantIds.toArray(new Integer[sharedTenantIds.size()]));
+        breakdown.setSharedTenantIDs(sharedTenantIds.toArray(new Integer[sharedTenantIds.size()]));
 
         return breakdown;
 
@@ -1948,7 +2027,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 // Integer[] tenantIds = breakdown.getTenantIds();
 
                 String[] sharedRoles = breakdown.getSharedRoles();
-                Integer[] sharedTenantIds = breakdown.getSharedTenantids();
+                Integer[] sharedTenantIds = breakdown.getSharedTenantIDs();
 
                 String sqlStmt1 = null;
 
@@ -2012,7 +2091,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 // Integer[] tenantIds = breakdown.getTenantIds();
 
                 String[] sharedRoles = breakdown.getSharedRoles();
-                Integer[] sharedTenantIds = breakdown.getSharedTenantids();
+                Integer[] sharedTenantIds = breakdown.getSharedTenantIDs();
 
                 if (roles.length > 0) {
 
@@ -2348,9 +2427,12 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
     }
 
     /**
-     *
+     * Get the password exiparation time of the user.
+     * @param userName username.
+     * @return date.
+     * @throws UserStoreException
      */
-    public Date getPasswordExpirationTime(String userName) throws UserStoreException {
+    public Date doGetPasswordExpirationTime(String userName) throws UserStoreException {
 
         if (userName != null && userName.contains(CarbonConstants.DOMAIN_SEPARATOR)) {
             return super.getPasswordExpirationTime(userName);
@@ -2424,6 +2506,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         }
         return saltValue;
     }
+
     /**
      * @param dbConnection
      * @param sqlStmt
@@ -2895,6 +2978,35 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 prepStmt.setInt(4, tenantId);
                 prepStmt.setInt(5, tenantId);
             }
+            String enableMaxUserLimitForSCIM = realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig
+                    .PROPERTY_MAX_USER_LIST_FOR_SCIM);
+            if (Boolean.parseBoolean(enableMaxUserLimitForSCIM)) {
+                int givenMax;
+                int searchTime;
+                int maxItemLimit = MAX_ITEM_LIMIT_UNLIMITED;
+                try {
+                    givenMax = Integer.parseInt(realmConfig
+                            .getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_MAX_USER_LIST));
+                } catch (Exception e) {
+                    givenMax = UserCoreConstants.MAX_USER_ROLE_LIST;
+                }
+                try {
+                    searchTime = Integer.parseInt(realmConfig
+                            .getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_MAX_SEARCH_TIME));
+                } catch (Exception e) {
+                    searchTime = UserCoreConstants.MAX_SEARCH_TIME;
+                }
+                if (maxItemLimit < 0 || maxItemLimit > givenMax) {
+                    maxItemLimit = givenMax;
+                }
+                prepStmt.setMaxRows(maxItemLimit);
+                try {
+                    prepStmt.setQueryTimeout(searchTime);
+                } catch (Exception e) {
+                    // this can be ignored since timeout method is not implemented
+                    log.debug(e);
+                }
+            }
             rs = prepStmt.executeQuery();
             while (rs.next()) {
                 String name = rs.getString(1);
@@ -2999,6 +3111,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.GET_USERS_PROPS_FOR_PROFILE);
                 for (int i = 0; i < users.size(); i++) {
 
+                    users.set(i, users.get(i).replaceAll("'", "''"));
                     usernameParameter.append("'").append(users.get(i)).append("'");
 
                     if (i != users.size() - 1) {
@@ -3010,6 +3123,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                         JDBCCaseInsensitiveConstants.GET_USERS_PROPS_FOR_PROFILE_CASE_INSENSITIVE);
                 for (int i = 0; i < users.size(); i++) {
 
+                    users.set(i, users.get(i).replaceAll("'", "''"));
                     usernameParameter.append("LOWER('").append(users.get(i)).append("')");
 
                     if (i != users.size() - 1) {
@@ -3018,7 +3132,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 }
             }
 
-            sqlStmt = sqlStmt.replaceFirst("\\?", usernameParameter.toString());
+            sqlStmt = sqlStmt.replaceFirst("\\?", Matcher.quoteReplacement(usernameParameter.toString()));
             prepStmt = dbConnection.prepareStatement(sqlStmt);
             prepStmt.setString(1, profileName);
             if (sqlStmt.contains(UserCoreConstants.UM_TENANT_COLUMN)) {
@@ -3077,6 +3191,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 }
                 for (int i = 0; i < userNames.size(); i++) {
 
+                    userNames.set(i, userNames.get(i).replaceAll("'", "''"));
                     usernameParameter.append("'").append(userNames.get(i)).append("'");
 
                     if (i != userNames.size() - 1) {
@@ -3091,6 +3206,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 }
                 for (int i = 0; i < userNames.size(); i++) {
 
+                    userNames.set(i, userNames.get(i).replaceAll("'", "''"));
                     usernameParameter.append("LOWER('").append(userNames.get(i)).append("')");
 
                     if (i != userNames.size() - 1) {
@@ -3099,7 +3215,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 }
             }
 
-            sqlStmt = sqlStmt.replaceFirst("\\?", usernameParameter.toString());
+            sqlStmt = sqlStmt.replaceFirst("\\?", Matcher.quoteReplacement(usernameParameter.toString()));
             prepStmt = dbConnection.prepareStatement(sqlStmt);
             if (sqlStmt.contains(UserCoreConstants.UM_TENANT_COLUMN)) {
                 prepStmt.setInt(1, tenantId);
@@ -3570,7 +3686,6 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
             }
 
             while (rs.next()) {
-
                 String name = rs.getString(1);
                 if (CarbonConstants.REGISTRY_ANONNYMOUS_USERNAME.equals(name)) {
                     continue;
@@ -3602,6 +3717,152 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
             result.setSkippedUserCount(doGetListUsersCount(filter));
         }
         return result;
+    }
+
+    /**
+     * Count users with claim.
+     *
+     * @param claimUri claim uri.
+     * @param value The filter for the user name. Use '*' to have all.
+     * @return Count of the users.
+     * @throws UserStoreException UserStoreException
+     */
+    public long doCountUsersWithClaims(String claimUri, String value) throws UserStoreException {
+
+        if (claimUri == null) {
+            throw new IllegalArgumentException("Error while getting the claim uri");
+        }
+
+        String valueFilter = value;
+        if (valueFilter == null) {
+            throw new IllegalArgumentException("Error while getting the claim filter");
+        }
+
+        String sqlStmt;
+        if (isUserNameClaim(claimUri)) {
+            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.COUNT_USERS);
+
+        } else {
+            sqlStmt = JDBCRealmConstants.COUNT_USERS_WITH_CLAIM_SQL;
+        }
+
+        if (valueFilter.equals("*")) {
+            valueFilter = "%";
+        } else {
+            valueFilter = valueFilter.trim();
+            valueFilter = valueFilter.replace("*", "%");
+            valueFilter = valueFilter.replace("?", "_");
+        }
+
+        try (Connection dbConnection = getDBConnection();
+             PreparedStatement prepStmt = dbConnection.prepareStatement(sqlStmt)) {
+            String domainName = getMyDomainName();
+            if (StringUtils.isEmpty(domainName)) {
+                domainName = UserCoreConstants.PRIMARY_DEFAULT_DOMAIN_NAME;
+            }
+
+            if (isUserNameClaim(claimUri)) {
+                prepStmt.setString(1, valueFilter);
+                prepStmt.setInt(2, tenantId);
+            } else {
+                prepStmt.setString(1, userRealm.getClaimManager().getAttributeName(domainName, claimUri));
+                prepStmt.setInt(2, tenantId);
+                prepStmt.setString(3, valueFilter);
+                prepStmt.setString(4, UserCoreConstants.DEFAULT_PROFILE);
+            }
+
+            ResultSet resultSet = prepStmt.executeQuery();
+            if (resultSet.next()) {
+                return resultSet.getLong("RESULT");
+            } else {
+                log.warn("No result for the filter" + value);
+                return 0;
+            }
+
+        } catch (SQLException e) {
+            String msg = "Error while executing the SQL " + sqlStmt;
+            if (log.isDebugEnabled()) {
+                log.debug(msg + sqlStmt);
+            }
+            throw new UserStoreException(msg, e);
+        } catch (UserStoreException ex) {
+            handleGetUserCountFailure(UserCoreErrorConstants.ErrorMessages.ERROR_CODE_ERROR_WHILE_GETTING_COUNT_USERS
+                            .getCode(),
+                    String.format(UserCoreErrorConstants.ErrorMessages.ERROR_CODE_ERROR_WHILE_GETTING_COUNT_USERS
+                                    .getMessage(),
+                            ex.getMessage()), claimUri, value);
+            throw ex;
+        } catch (org.wso2.carbon.user.api.UserStoreException e) {
+            String ErrorMsg = "Error while getting attribute name from " + claimUri ;
+            throw new UserStoreException(ErrorMsg, e);
+        }
+    }
+
+    /**
+     * Count roles in user stores.
+     *
+     * @param filter the filter for the user name. Use '*' to have all.
+     * @return user count
+     * @throws UserStoreException UserStoreException
+     */
+    public long doCountRoles(String filter) throws UserStoreException {
+
+        long usersCount = 0;
+        String sqlStmt;
+        if (filter.startsWith(UserCoreConstants.INTERNAL_DOMAIN)) {
+            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.COUNT_INTERNAL_ROLES);
+            String names[] = filter.split(UserCoreConstants.DOMAIN_SEPARATOR);
+            filter = names[1].trim();
+        } else if (filter.startsWith(UserCoreConstants.APPLICATION_DOMAIN)) {
+            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.COUNT_APPLICATION_ROLES);
+        } else {
+            sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.COUNT_ROLES);
+        }
+
+        if (StringUtils.isNotEmpty(filter)) {
+            filter = filter.trim();
+            filter = filter.replace("*", "%");
+            filter = filter.replace("?", "_");
+        } else {
+            filter = "%";
+        }
+
+        try (Connection dbConnection = getDBConnection();
+             PreparedStatement prepStmt = dbConnection.prepareStatement(sqlStmt)) {
+
+            prepStmt.setString(1, filter);
+            if (sqlStmt.toUpperCase().contains(UserCoreConstants.SQL_ESCAPE_KEYWORD)) {
+                prepStmt.setString(2, SQL_FILTER_CHAR_ESCAPE);
+                if (sqlStmt.contains(UserCoreConstants.UM_TENANT_COLUMN)) {
+                    prepStmt.setInt(3, tenantId);
+                }
+            } else {
+                if (sqlStmt.contains(UserCoreConstants.UM_TENANT_COLUMN)) {
+                    prepStmt.setInt(2, tenantId);
+                }
+            }
+
+            ResultSet resultSets = prepStmt.executeQuery();
+                while (resultSets.next()) {
+                    return resultSets.getLong(1);
+                }
+
+        } catch (SQLException e) {
+            String msg = "Error occurred while retrieving users for filter : " + filter;
+            if (log.isDebugEnabled()) {
+                log.debug(msg, e);
+            }
+            throw new UserStoreException(msg, e);
+
+        } catch (UserStoreException ex) {
+            handleGetUserCountFailure(UserCoreErrorConstants.ErrorMessages.ERROR_CODE_ERROR_WHILE_GETTING_ROLES_COUNT
+                            .getCode(),
+                    String.format(UserCoreErrorConstants.ErrorMessages.ERROR_CODE_ERROR_WHILE_GETTING_ROLES_COUNT
+                                    .getMessage(),
+                            ex.getMessage()), null, null);
+            throw ex;
+        }
+        return usersCount;
     }
 
     protected int doGetListUsersCount(String filter) throws UserStoreException {
@@ -4320,7 +4581,8 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         for (int i = 0; i < baseSqlBuilder.getWheres().size(); i++) {
 
             if (baseSqlBuilder.getIntegerParameters().containsKey(i + 1)) {
-                newSqlBuilder.where(baseSqlBuilder.getWheres().get(i), baseSqlBuilder.getIntegerParameters().get(i + 1));
+                newSqlBuilder
+                        .where(baseSqlBuilder.getWheres().get(i), baseSqlBuilder.getIntegerParameters().get(i + 1));
 
             } else if (baseSqlBuilder.getStringParameters().containsKey(i + 1)) {
                 newSqlBuilder.where(baseSqlBuilder.getWheres().get(i), baseSqlBuilder.getStringParameters().get(i + 1));
@@ -4397,47 +4659,6 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         return count;
     }
 
-    public class RoleBreakdown {
-        private String[] roles;
-        private Integer[] tenantIds;
-
-        private String[] sharedRoles;
-        private Integer[] sharedTenantids;
-
-        public String[] getRoles() {
-            return roles;
-        }
-
-        public void setRoles(String[] roles) {
-            this.roles = roles;
-        }
-
-        public Integer[] getTenantIds() {
-            return tenantIds;
-        }
-
-        public void setTenantIds(Integer[] tenantIds) {
-            this.tenantIds = tenantIds;
-        }
-
-        public String[] getSharedRoles() {
-            return sharedRoles;
-        }
-
-        public void setSharedRoles(String[] sharedRoles) {
-            this.sharedRoles = sharedRoles;
-        }
-
-        public Integer[] getSharedTenantids() {
-            return sharedTenantids;
-        }
-
-        public void setSharedTenantids(Integer[] sharedTenantids) {
-            this.sharedTenantids = sharedTenantids;
-        }
-
-    }
-
     private boolean isCaseSensitiveUsername() {
         String isUsernameCaseInsensitiveString = realmConfig.getUserStoreProperty(CASE_INSENSITIVE_USERNAME);
         return !Boolean.parseBoolean(isUsernameCaseInsensitiveString);
@@ -4463,5 +4684,52 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
             throw new UserStoreException("The sql statement for retrieving user roles is null");
         }
         return sqlStmt;
+    }
+
+    private int getMaxUserNameListLength() {
+
+        int maxUserList;
+        try {
+            maxUserList = Integer.parseInt(realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig
+                    .PROPERTY_MAX_USER_LIST));
+        } catch (Exception e) {
+            // The user store property might not be configured. Therefore logging as debug.
+            if (log.isDebugEnabled()) {
+                log.debug("Unable to get the " + UserCoreConstants.RealmConfig.PROPERTY_MAX_USER_LIST +
+                        " from the realm configuration. The default value: " + UserCoreConstants.MAX_USER_ROLE_LIST +
+                        " is used instead.", e);
+            }
+            maxUserList = UserCoreConstants.MAX_USER_ROLE_LIST;
+        }
+        return maxUserList;
+    }
+
+    private int getSQLQueryTimeoutLimit() {
+
+        int searchTime;
+        try {
+            searchTime = Integer.parseInt(realmConfig
+                    .getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_MAX_SEARCH_TIME));
+        } catch (Exception e) {
+            // The user store property might not be configured. Therefore logging as debug.
+            if (log.isDebugEnabled()) {
+                log.debug("Unable to get the " + UserCoreConstants.RealmConfig.PROPERTY_MAX_SEARCH_TIME +
+                        " from the realm configuration. The default value: " + UserCoreConstants.MAX_SEARCH_TIME +
+                        " is used instead.", e);
+            }
+            searchTime = UserCoreConstants.MAX_SEARCH_TIME;
+        }
+        return searchTime;
+    }
+
+    private boolean isUserNameClaim(String claim) {
+
+        return AbstractUserStoreManager.USERNAME_CLAIM_URI.equals(claim);
+    }
+
+    @Override
+    public boolean isUniqueUserIdEnabled() {
+
+        return false;
     }
 }

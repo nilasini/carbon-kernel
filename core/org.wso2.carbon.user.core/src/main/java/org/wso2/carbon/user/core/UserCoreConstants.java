@@ -60,6 +60,7 @@ public class UserCoreConstants {
     public static final int MAX_SEARCH_TIME = 10000;   // ms
 
     public static final String INTERNAL_DOMAIN = "Internal";
+    public static final String APPLICATION_DOMAIN = "Application";
     public static final String INTERNAL_DOMAIN_LOWER_CASED = "internal";
     public static final String PRIMARY_DEFAULT_DOMAIN_NAME = "PRIMARY";
     public static final String SYSTEM_DOMAIN_NAME = "SYSTEM";
@@ -154,6 +155,7 @@ public class UserCoreConstants {
         public static final String PROPERTY_MAX_USER_LIST = "MaxUserNameListLength";
         public static final String PROPERTY_MAX_ROLE_LIST = "MaxRoleNameListLength";
         public static final String PROPERTY_MAX_SEARCH_TIME = "MaxSearchQueryTime";
+        public static final String PROPERTY_MAX_USER_LIST_FOR_SCIM = "EnableMaxUserLimitForSCIM";
 
         public static final String READ_GROUPS_ENABLED = "ReadGroups";
 
@@ -220,6 +222,7 @@ public class UserCoreConstants {
         public static final String DOMAIN_NAME_XPATH = "//UserStoreManager/Property[@name='DomainName']";
         public static final String LEADING_OR_TRAILING_SPACE_ALLOWED_IN_USERNAME =
                 "LeadingOrTrailingSpaceAllowedInUserName";
+        public static final String PROPERTY_USER_ID_ENABLED = "UserIDEnabled";
     }
 
     public static final class ClaimTypeURIs {

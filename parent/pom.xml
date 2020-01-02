@@ -10,7 +10,7 @@
     <groupId>org.wso2.carbon</groupId>
     <artifactId>carbon-parent</artifactId>
     <packaging>pom</packaging>
-    <version>4.5.2</version>
+    <version>4.6.0-SNAPSHOT</version>
     <name>WSO2 Carbon - Parent Pom</name>
     <description>WSO2 Carbon Kernel Parent Pom</description>
     <url>http://wso2.org</url>
@@ -47,7 +47,7 @@
                 <configuration>
                     <rules>
                         <requireJavaVersion>
-                            <version>[11,)</version>
+                            <version>[1.8,)</version>
                         </requireJavaVersion>
                     </rules>
                 </configuration>
@@ -314,9 +314,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Carbon Kernel Related Versions-->
-        <carbon.kernel.version>4.5.2</carbon.kernel.version>
+        <carbon.kernel.version>4.6.0-SNAPSHOT</carbon.kernel.version>
         <carbon.kernel.exp.pkg.version>${carbon.kernel.version}</carbon.kernel.exp.pkg.version>
-        <carbon.kernel.imp.pkg.version>[${carbon.kernel.version}, 4.6.0)</carbon.kernel.imp.pkg.version>
+        <carbon.kernel.imp.pkg.version>[${carbon.kernel.version}, 4.7.0)</carbon.kernel.imp.pkg.version>
 
         <!-- Equinox dependency versions -->
         <version.equinox.simpleconfigurator>1.1.200.v20160504-1450</version.equinox.simpleconfigurator>
@@ -542,8 +542,8 @@
         <version.commons.logging>1.2</version.commons.logging>
 
         <!--PAX Logging related dependency versions-->
-        <pax.logging.api.version>1.11.0</pax.logging.api.version>
-        <pax.logging.log4j2.version>1.11.0</pax.logging.log4j2.version>
+        <pax.logging.api.version>1.11.3</pax.logging.api.version>
+        <pax.logging.log4j2.version>1.11.3</pax.logging.log4j2.version>
 
         <!--<version.opensaml2>2.4.1.wso2v1</version.opensaml2>-->
         <version.compass>2.0.1.wso2v2</version.compass>
@@ -983,11 +983,6 @@
                 <version>${version.findbugs.annotations}</version>
             </dependency>
             <dependency>
-                <groupId>commons-logging</groupId>
-                <artifactId>commons-logging</artifactId>
-                <version>${version.commons.logging}</version>
-            </dependency>
-            <dependency>
                 <groupId>org.eclipse.equinox</groupId>
                 <artifactId>javax.servlet</artifactId>
                 <version>${version.equinox.javax.servlet}</version>
@@ -1128,11 +1123,6 @@
                 <groupId>xml-apis</groupId>
                 <artifactId>xml-apis</artifactId>
                 <version>${version.xml-apis}</version>
-            </dependency>
-            <dependency>
-                <groupId>xml-resolver</groupId>
-                <artifactId>xml-resolver</artifactId>
-                <version>${version.xml-resolver}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.woden.wso2</groupId>
@@ -1706,11 +1696,6 @@
                 <version>${carbon.kernel.version}</version>
                 <type>zip</type>
             </dependency>
-            <dependency>
-                <groupId>org.wso2.orbit.org.owasp.encoder</groupId>
-                <artifactId>encoder</artifactId>
-                <version>${owasp.encoder.wso2.version}</version>
-            </dependency>
 
 
             <!-- Test integration dependencies -->
@@ -1785,11 +1770,6 @@
                 <groupId>org.powermock</groupId>
                 <artifactId>powermock-module-testng</artifactId>
                 <version>${powermock.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>javax.activation</groupId>
-                <artifactId>activation</artifactId>
-                <version>${version.activation}</version>
             </dependency>
             <dependency>
                 <groupId>javax.xml.bind</groupId>
@@ -1914,8 +1894,4 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
-  <scm>
-    <tag>v4.5.2</tag>
-  </scm>
 </project>

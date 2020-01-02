@@ -35,7 +35,7 @@
 			<Property name="minIdle">5</Property>
         </Configuration>
         <UserStoreManager
-            class="org.wso2.carbon.user.core.jdbc.JDBCUserStoreManager">
+            class="org.wso2.carbon.user.core.jdbc.UniqueIDJDBCUserStoreManager">
             <Property name="PasswordJavaRegEx">[\S]{5,30}$</Property>
             <Property name="PasswordJavaScriptRegEx">[\\S]{5,30}</Property>
             <Property name="UsernameJavaRegEx">^[^~!@#$;%^*+={}\\|\\\\&lt;&gt;]{3,30}$</Property>

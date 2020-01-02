@@ -39,7 +39,7 @@
 	         Note: Do not comment within UserStoreManager tags. Cause, specific tag names are used as tokens
 	         when building configurations for products.
 	    -->
-        <UserStoreManager class="org.wso2.carbon.user.core.jdbc.JDBCUserStoreManager">
+        <UserStoreManager class="org.wso2.carbon.user.core.jdbc.UniqueIDJDBCUserStoreManager">
             <Property name="TenantManager">org.wso2.carbon.user.core.tenant.JDBCTenantManager</Property>
             <Property name="ReadOnly">false</Property>
             <Property name="ReadGroups">true</Property>
@@ -63,13 +63,14 @@
             <Property name="UserRolesCacheEnabled">true</Property>
             <Property name="UserNameUniqueAcrossTenants">false</Property>
             <Property name="LeadingOrTrailingSpaceAllowedInUserName">false</Property>
+            <Property name="EnableMaxUserLimitForSCIM">false</Property>
         </UserStoreManager>
 	
 	    <!-- If product is using an external LDAP as the user store in READ ONLY mode, use following user manager.
 		     In case if user core cache domain is needed to identify uniquely set property
 		     <Property name="UserCoreCacheIdentifier">domain</Property>
  	    -->
-        <!--UserStoreManager class="org.wso2.carbon.user.core.ldap.ReadOnlyLDAPUserStoreManager">
+        <!--UserStoreManager class="org.wso2.carbon.user.core.ldap.UniqueIDReadOnlyLDAPUserStoreManager">
             <Property name="TenantManager">org.wso2.carbon.user.core.tenant.CommonHybridLDAPTenantManager</Property>
             <Property name="ConnectionURL">ldap://localhost:10389</Property>
             <Property name="ConnectionName">uid=admin,ou=system</Property>
@@ -77,6 +78,7 @@
             <Property name="AnonymousBind">false</Property>
             <Property name="UserSearchBase">ou=system</Property>
             <Property name="UserNameAttribute">uid</Property>
+            <Property name="UserIDAttribute">scimId</Property>
             <Property name="UserNameSearchFilter">(&amp;(objectClass=person)(uid=?))</Property>
             <Property name="UserNameListFilter">(&amp;(objectClass=person)(!(sn=Service)))</Property>
             <Property name="DisplayNameAttribute"/>
@@ -102,6 +104,7 @@
             <Property name="RetryAttempts"/>
             <Property name="ReplaceEscapeCharactersAtUserLogin">true</Property>
             <Property name="ConnectionRetryDelay">120000</Property>
+            <Property name="EnableMaxUserLimitForSCIM">false</Property>
         </UserStoreManager-->
 	
 	    <!-- Active directory configuration is as follows.
@@ -114,7 +117,7 @@
 	         In which role is stored at user level. Depending on this value we need to change the Search Base within code.
 	         isADLDSRole - (Do not comment) Set to true if connecting to an AD LDS instance else set to false.
 	    -->
-        <!--UserStoreManager class="org.wso2.carbon.user.core.ldap.ActiveDirectoryUserStoreManager">
+        <!--UserStoreManager class="org.wso2.carbon.user.core.ldap.UniqueIDActiveDirectoryUserStoreManager">
             <Property name="TenantManager">org.wso2.carbon.user.core.tenant.CommonHybridLDAPTenantManager</Property>
             <Property name="ConnectionURL">ldaps://10.100.1.100:636</Property> 
             <Property name="ConnectionName">CN=admin,CN=Users,DC=WSO2,DC=Com</Property>
@@ -123,6 +126,7 @@
             <Property name="UserSearchBase">CN=Users,DC=WSO2,DC=Com</Property>
             <Property name="UserEntryObjectClass">user</Property>
             <Property name="UserNameAttribute">cn</Property>
+            <Property name="UserIDAttribute">scimId</Property>
             <Property name="UserNameSearchFilter">(&amp;(objectClass=user)(cn=?))</Property>
             <Property name="UserNameListFilter">(&amp;(objectClass=user)(!(sn=Service)))</Property>
             <Property name="DisplayNameAttribute"/>
@@ -164,6 +168,7 @@
             <Property name="RetryAttempts"/>
             <Property name="StartTLSEnabled">false</Property>
             <Property name="ConnectionRetryDelay">120000</Property>
+            <Property name="EnableMaxUserLimitForSCIM">false</Property>
         </UserStoreManager-->
 
         <!-- Following user manager is used by Identity Server (IS) as its default user manager.
@@ -173,7 +178,7 @@
              service password formats. In case if user core cache domain is needed to identify uniquely set property
              <Property name="UserCoreCacheIdentifier">domain</Property>
         -->
-        <!--ISUserStoreManager class="org.wso2.carbon.user.core.ldap.ReadWriteLDAPUserStoreManager">
+        <!--ISUserStoreManager class="org.wso2.carbon.user.core.ldap.UniqueIDReadWriteLDAPUserStoreManager">
             <Property name="TenantManager">org.wso2.carbon.user.core.tenant.CommonHybridLDAPTenantManager</Property>
             <Property name="ConnectionURL">ldap://localhost:${Ports.EmbeddedLDAP.LDAPServerPort}</Property>
             <Property name="ConnectionName">uid=admin,ou=system</Property>
@@ -182,6 +187,7 @@
             <Property name="UserSearchBase">ou=Users,dc=wso2,dc=org</Property>
             <Property name="UserEntryObjectClass">identityPerson</Property>
             <Property name="UserNameAttribute">uid</Property>
+            <Property name="UserIDAttribute">scimId</Property>
             <Property name="UserNameSearchFilter">(&amp;(objectClass=person)(uid=?))</Property>
             <Property name="UserNameListFilter">(&amp;(objectClass=person)(!(sn=Service)))</Property>
             <Property name="DisplayNameAttribute"/>
@@ -218,6 +224,7 @@
             <Property name="RetryAttempts"/>
             <Property name="StartTLSEnabled">false</Property>
             <Property name="ConnectionRetryDelay">120000</Property>
+            <Property name="EnableMaxUserLimitForSCIM">false</Property>
         </ISUserStoreManager-->
 
         <AuthorizationManager class="org.wso2.carbon.user.core.authorization.JDBCAuthorizationManager">

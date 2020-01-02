@@ -36,7 +36,7 @@
 		 <Property name="MultiTenantRealmConfigBuilder">org.wso2.carbon.user.core.config.multitenancy.SimpleRealmConfigBuilder</Property>
         </Configuration>
         <UserStoreManager
-            class="org.wso2.carbon.user.core.jdbc.JDBCUserStoreManager">
+            class="org.wso2.carbon.user.core.jdbc.UniqueIDJDBCUserStoreManager">
             <Property name="ReadOnly">false</Property>
             <Property name="MaxUserNameListLength">100</Property>
             <Property name="IsEmailUserName">false</Property>

@@ -19,6 +19,7 @@ package org.wso2.carbon.user.core.ldap;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -129,6 +130,7 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
     //Authenticating to LDAP via Anonymous Bind
     private static final String USE_ANONYMOUS_BIND = "AnonymousBind";
     protected static final int MEMBERSHIP_ATTRIBUTE_RANGE_VALUE = 0;
+    private static final int MAX_ITEM_LIMIT_UNLIMITED = -1;
 
     private String cacheExpiryTimeAttribute = ""; //Default: expire with default system wide cache expiry
     private long userDnCacheExpiryTime = 0; //Default: No cache
@@ -613,7 +615,8 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
                 }
                 if (log.isDebugEnabled()) {
                     try {
-                        log.debug("Searching for user with SearchFilter: " + searchFilter + " in SearchBase: " + dirContext.getNameInNamespace());
+                        log.debug("Searching for user with SearchFilter: " + searchFilter + " in SearchBase: "
+                                + dirContext.getNameInNamespace());
                     } catch (NamingException e) {
                         log.debug("Error while getting DN of search base", e);
                     }
@@ -629,7 +632,8 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
                     answer = dirContext.search(escapeDNForSearch(userDN), searchFilter, searchCtls);
                 } catch (PartialResultException e) {
                     // can be due to referrals in AD. so just ignore error
-                    String errorMessage = "Error occurred while searching directory context for user : " + userDN + " searchFilter : " + searchFilter;
+                    String errorMessage = "Error occurred while searching directory context for user : " + userDN
+                            + " searchFilter : " + searchFilter;
                     if (isIgnorePartialResultException()) {
                         if (log.isDebugEnabled()) {
                             log.debug(errorMessage, e);
@@ -638,7 +642,8 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
                         throw new UserStoreException(errorMessage, e);
                     }
                 } catch (NamingException e) {
-                    String errorMessage = "Error occurred while searching directory context for user : " + userDN + " searchFilter : " + searchFilter;
+                    String errorMessage = "Error occurred while searching directory context for user : " + userDN
+                            + " searchFilter : " + searchFilter;
                     if (log.isDebugEnabled()) {
                         log.debug(errorMessage, e);
                     }
@@ -647,76 +652,77 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
             } else {
                 answer = this.searchForUser(searchFilter, propertyNames, dirContext);
             }
-            while (answer.hasMoreElements()) {
+            while (answer != null && answer.hasMoreElements()) {
                 SearchResult sr = (SearchResult) answer.next();
                 Attributes attributes = sr.getAttributes();
-                if (attributes != null) {
-                    for (String name : propertyNames) {
-                        if (name != null) {
-                            Attribute attribute = attributes.get(name);
-                            if (attribute != null) {
-                                StringBuffer attrBuffer = new StringBuffer();
-                                for (attrs = attribute.getAll(); attrs.hasMore(); ) {
-                                    Object attObject = attrs.next();
-                                    String attr = null;
-                                    if (attObject instanceof String) {
-                                        attr = (String) attObject;
-                                    } else if (attObject instanceof byte[]) {
-                                        // return canonical representation of UUIDs or base64 encoded string of other binary data
-                                        // Active Directory attribute: objectGUID
-                                        // RFC 4530 attribute: entryUUID
-                                        final byte[] bytes = (byte[]) attObject;
-                                        if (bytes.length == 16 && name.endsWith("UID")) {
-                                            // objectGUID byte order is not big-endian
-                                            // https://msdn.microsoft.com/en-us/library/aa373931%28v=vs.85%29.aspx
-                                            // https://community.oracle.com/thread/1157698
-                                            if (name.equals(OBJECT_GUID)) {
-                                                // check the property for objectGUID transformation
-                                                String property =
-                                                        realmConfig.getUserStoreProperty(TRANSFORM_OBJECTGUID_TO_UUID);
+                if (attributes == null) {
+                    continue;
+                }
+                for (String name : propertyNames) {
+                    if (name == null) {
+                        continue;
+                    }
+                    Attribute attribute = attributes.get(name);
+                    if (attribute == null) {
+                        continue;
+                    }
+                    StringBuffer attrBuffer = new StringBuffer();
+                    for (attrs = attribute.getAll(); attrs.hasMore(); ) {
+                        Object attObject = attrs.next();
+                        String attr = null;
+                        if (attObject instanceof String) {
+                            attr = (String) attObject;
+                        } else if (attObject instanceof byte[]) {
+                            // return canonical representation of UUIDs or base64 encoded string of other binary data
+                            // Active Directory attribute: objectGUID
+                            // RFC 4530 attribute: entryUUID
+                            final byte[] bytes = (byte[]) attObject;
+                            if (bytes.length == 16 && name.endsWith("UID")) {
+                                // objectGUID byte order is not big-endian
+                                // https://msdn.microsoft.com/en-us/library/aa373931%28v=vs.85%29.aspx
+                                // https://community.oracle.com/thread/1157698
+                                if (name.equals(OBJECT_GUID)) {
+                                    // check the property for objectGUID transformation
+                                    String property =
+                                            realmConfig.getUserStoreProperty(TRANSFORM_OBJECTGUID_TO_UUID);
 
-                                                boolean transformObjectGuidToUuid = StringUtils.isEmpty(property) ||
-                                                        Boolean.parseBoolean(property);
+                                    boolean transformObjectGuidToUuid = StringUtils.isEmpty(property) ||
+                                            Boolean.parseBoolean(property);
 
-                                                if (transformObjectGuidToUuid) {
-                                                    final ByteBuffer bb = ByteBuffer.wrap(swapBytes(bytes));
-                                                    attr = new java.util.UUID(bb.getLong(), bb.getLong()).toString();
-                                                } else {
-                                                    // Ignore transforming objectGUID to UUID canonical format
-                                                    attr = new String(Base64.encodeBase64((byte[]) attObject));
-                                                }
-                                            }
-                                        } else {
-                                            attr = new String(Base64.encodeBase64((byte[]) attObject));
-                                        }
+                                    if (transformObjectGuidToUuid) {
+                                        final ByteBuffer bb = ByteBuffer.wrap(swapBytes(bytes));
+                                        attr = new java.util.UUID(bb.getLong(), bb.getLong()).toString();
+                                    } else {
+                                        // Ignore transforming objectGUID to UUID canonical format
+                                        attr = new String(Base64.encodeBase64((byte[]) attObject));
                                     }
-
-                                    if (attr != null && attr.trim().length() > 0) {
-                                        String attrSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
-                                        if (attrSeparator != null && !attrSeparator.trim().isEmpty()) {
-                                            userAttributeSeparator = attrSeparator;
-                                        }
-                                        attrBuffer.append(attr + userAttributeSeparator);
-                                    }
-                                    String value = attrBuffer.toString();
-
-                                /*
-                                 * Length needs to be more than userAttributeSeparator.length() for a valid
-                                 * attribute, since we
-                                 * attach userAttributeSeparator
-                                 */
-                                    if (value != null && value.trim().length() > userAttributeSeparator.length()) {
-                                        value = value.substring(0, value.length() - userAttributeSeparator.length());
-                                        values.put(name, value);
-                                    }
-
                                 }
+                            } else {
+                                attr = new String(Base64.encodeBase64((byte[]) attObject));
                             }
+                        }
+
+                        if (attr != null && attr.trim().length() > 0) {
+                            String attrSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
+                            if (attrSeparator != null && !attrSeparator.trim().isEmpty()) {
+                                userAttributeSeparator = attrSeparator;
+                            }
+                            attrBuffer.append(attr + userAttributeSeparator);
+                        }
+                        String value = attrBuffer.toString();
+
+                        /*
+                         * Length needs to be more than userAttributeSeparator.length() for a valid
+                         * attribute, since we
+                         * attach userAttributeSeparator
+                         */
+                        if (value != null && value.trim().length() > userAttributeSeparator.length()) {
+                            value = value.substring(0, value.length() - userAttributeSeparator.length());
+                            values.put(name, value);
                         }
                     }
                 }
             }
-
         } catch (NamingException e) {
             String errorMessage = "Error occurred while getting user property values for user : " + userName;
             if (log.isDebugEnabled()) {
@@ -891,32 +897,6 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
             return userNames;
         }
 
-        int givenMax = UserCoreConstants.MAX_USER_ROLE_LIST;
-        int searchTime = UserCoreConstants.MAX_SEARCH_TIME;
-
-        try {
-            givenMax =
-                    Integer.parseInt(realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_MAX_USER_LIST));
-        } catch (Exception e) {
-            givenMax = UserCoreConstants.MAX_USER_ROLE_LIST;
-        }
-
-        try {
-            searchTime =
-                    Integer.parseInt(realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_MAX_SEARCH_TIME));
-        } catch (Exception e) {
-            searchTime = UserCoreConstants.MAX_SEARCH_TIME;
-        }
-
-        if (maxItemLimit < 0 || maxItemLimit > givenMax) {
-            maxItemLimit = givenMax;
-        }
-
-        SearchControls searchCtls = new SearchControls();
-        searchCtls.setSearchScope(SearchControls.SUBTREE_SCOPE);
-        searchCtls.setCountLimit(maxItemLimit);
-        searchCtls.setTimeLimit(searchTime);
-
         if (filter.contains("?") || filter.contains("**")) {
             throw new UserStoreException(
                     "Invalid character sequence entered for user serch. Please enter valid sequence.");
@@ -952,25 +932,16 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
                     .append(escapeSpecialCharactersForFilterWithStarAsRegex(filter)).append("))");
         }
 
-        if (debug) {
-            log.debug("Listing users. SearchBase: " + searchBases + " Constructed-Filter: " + finalFilter.toString());
-            log.debug("Search controls. Max Limit: " + maxItemLimit + " Max Time: " + searchTime);
-        }
-
-        searchCtls.setReturningAttributes(returnedAtts);
-        DirContext dirContext = null;
         NamingEnumeration<SearchResult> answer = null;
         List<String> list = new ArrayList<String>();
 
         try {
-            dirContext = connectionSource.getContext();
             // handle multiple search bases
             String[] searchBaseArray = searchBases.split("#");
 
             for (String searchBase : searchBaseArray) {
-
-                answer = dirContext.search(escapeDNForSearch(searchBase), finalFilter.toString(), searchCtls);
-
+                answer = searchForUsers(finalFilter.toString(), searchBase, searchBases, maxItemLimit,
+                        returnedAtts);
                 while (answer.hasMoreElements()) {
                     SearchResult sr = (SearchResult) answer.next();
                     if (sr.getAttributes() != null) {
@@ -1052,9 +1023,67 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
             throw new UserStoreException(errorMessage, e);
         } finally {
             JNDIUtil.closeNamingEnumeration(answer);
-            JNDIUtil.closeContext(dirContext);
         }
         return userNames;
+    }
+
+    public long doCountUsersWithClaims(String claimURI, String valueFilter) throws UserStoreException {
+
+        throw new UserStoreException("Error occurred while getting users count with claims ");
+    }
+
+    protected NamingEnumeration<SearchResult> searchForUsers(String finalFilter,
+                                                           String searchBase, String
+                                                                   searchBases, int maxItemLimit, String[] returnedAtts)
+            throws UserStoreException {
+
+        int givenMax;
+        int searchTime;
+
+        try {
+            givenMax = Integer.parseInt(realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_MAX_USER_LIST));
+        } catch (Exception e) {
+            givenMax = UserCoreConstants.MAX_USER_ROLE_LIST;
+        }
+
+        try {
+            searchTime = Integer.parseInt(realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_MAX_SEARCH_TIME));
+        } catch (Exception e) {
+            searchTime = UserCoreConstants.MAX_SEARCH_TIME;
+        }
+
+        if (maxItemLimit < 0 || maxItemLimit > givenMax) {
+            maxItemLimit = givenMax;
+        }
+
+        SearchControls searchCtls = new SearchControls();
+        searchCtls.setSearchScope(SearchControls.SUBTREE_SCOPE);
+        searchCtls.setCountLimit(maxItemLimit);
+        searchCtls.setTimeLimit(searchTime);
+        searchCtls.setReturningAttributes(returnedAtts);
+
+        if (log.isDebugEnabled()) {
+            log.debug("Listing users. SearchBase: " + searchBases + " Constructed-Filter: " + finalFilter);
+            log.debug("Search controls. Max Limit: " + maxItemLimit + " Max Time: " + searchTime);
+        }
+
+        NamingEnumeration<SearchResult> answer;
+        DirContext dirContext = null;
+        dirContext = connectionSource.getContext();
+
+        try {
+            answer = dirContext.search(escapeDNForSearch(searchBase), finalFilter, searchCtls);
+        } catch (NamingException e) {
+            String errorMessage =
+                    "Error occurred while getting user list for filter : " + finalFilter + "max limit : " + maxItemLimit;
+            if (log.isDebugEnabled()) {
+                log.debug(errorMessage, e);
+            }
+            throw new UserStoreException(errorMessage, e);
+        } finally {
+            JNDIUtil.closeContext(dirContext);
+        }
+        return answer;
     }
 
     @Override
@@ -2604,9 +2633,45 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
         if (debug) {
             log.debug("Listing users with Property: " + property + " SearchFilter: " + searchFilter);
         }
-        String[] returnedAttributes = new String[]{ userPropertyName, serviceNameAttribute };
+        String[] returnedAttributes = new String[]{userPropertyName, serviceNameAttribute};
+        String enableMaxUserLimitForSCIM = realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig
+                .PROPERTY_MAX_USER_LIST_FOR_SCIM);
         try {
-            answer = this.searchForUser(searchFilter, returnedAttributes, dirContext);
+            if (Boolean.parseBoolean(enableMaxUserLimitForSCIM)) {
+                SearchControls searchCtls = new SearchControls();
+                searchCtls.setSearchScope(SearchControls.SUBTREE_SCOPE);
+                if (ArrayUtils.isNotEmpty(returnedAttributes)) {
+                    searchCtls.setReturningAttributes(returnedAttributes);
+                }
+                String nameInNamespace = null;
+                try {
+                    nameInNamespace = dirContext.getNameInNamespace();
+                } catch (NamingException e) {
+                    log.error("Error while getting DN of search base", e);
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("Searching for user with SearchFilter: " + searchFilter + " in SearchBase: " +
+                            nameInNamespace);
+                    if (ArrayUtils.isEmpty(returnedAttributes)) {
+                        log.debug("No attributes requested");
+                    } else {
+                        for (String attribute : returnedAttributes) {
+                            log.debug("Requesting attribute :" + attribute);
+                        }
+                    }
+                }
+                String searchBases = realmConfig.getUserStoreProperty(LDAPConstants.USER_SEARCH_BASE);
+                String[] searchBaseArray = searchBases.split("#");
+
+                for (String searchBase : searchBaseArray) {
+                    answer = this.searchForUsers(searchFilter, searchBase, searchBases, MAX_ITEM_LIMIT_UNLIMITED, returnedAttributes);
+                    if (answer.hasMore()) {
+                        break;
+                    }
+                }
+            } else {
+                answer = this.searchForUser(searchFilter, returnedAttributes, dirContext);
+            }
             while (answer.hasMoreElements()) {
                 SearchResult sr = (SearchResult) answer.next();
                 Attributes attributes = sr.getAttributes();
@@ -2649,10 +2714,10 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
                 }
             }
 
-		} catch (NamingException e) {
+        } catch (NamingException e) {
             String errorMessage =
                     "Error occurred while getting user list from property : " + property + " & value : " + value +
-                    " & profile name : " + profileName;
+                            " & profile name : " + profileName;
             if (log.isDebugEnabled()) {
                 log.debug(errorMessage, e);
             }
@@ -2708,12 +2773,16 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
         DirContext dirContext = this.connectionSource.getContext();
         LdapContext ldapContext = (LdapContext) dirContext;
         List<String> users;
+        List<String> ldapUsers = new ArrayList<>();
         String userNameAttribute = realmConfig.getUserStoreProperty(LDAPConstants.USER_NAME_ATTRIBUTE);
         try {
             ldapContext.setRequestControls(new Control[]{new PagedResultsControl(pageSize, Control.CRITICAL),
                     new SortControl(userNameAttribute, Control.NONCRITICAL)});
             users = performLDAPSearch(ldapContext, ldapSearchSpecification, pageSize, offset, expressionConditions);
-            result.setUsers(users.toArray(new String[0]));
+            for (String ldapUser : users) {
+                ldapUsers.add(UserCoreUtil.addDomainToName(ldapUser, getMyDomainName()));
+            }
+            result.setUsers(ldapUsers.toArray(new String[0]));
             return result;
         } catch (NamingException e) {
             log.error(String.format("Error occurred while performing paginated search, %s", e.getMessage()));
@@ -4247,6 +4316,12 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
                 UserStoreConfigConstants.CONNECTION_RETRY_DELAY_DISPLAY_NAME,
                 String.valueOf(UserStoreConfigConstants.DEFAULT_CONNECTION_RETRY_DELAY_IN_MILLISECONDS),
                 UserStoreConfigConstants.CONNECTION_RETRY_DELAY_DESCRIPTION);
+        setAdvancedProperty(UserStoreConfigConstants.enableMaxUserLimitForSCIM, UserStoreConfigConstants
+                        .enableMaxUserLimitDisplayName, "false",
+                UserStoreConfigConstants.enableMaxUserLimitForSCIMDescription);
+        setAdvancedProperty(UserStoreConfigConstants.SSLCertificateValidationEnabled, "Enable SSL certificate" +
+                " validation", "true", UserStoreConfigConstants.SSLCertificateValidationEnabledDescription);
+
     }
 
     private static void setAdvancedProperty(String name, String displayName, String value,
@@ -4472,4 +4547,11 @@ public class ReadOnlyLDAPUserStoreManager extends AbstractUserStoreManager {
         }
         super.finalize();
     }
+
+    @Override
+    public boolean isUniqueUserIdEnabled() {
+
+        return false;
+    }
+
 }

@@ -20,19 +20,29 @@ package org.wso2.carbon.user.core.jdbc.caseinsensitive;
 
 public class JDBCCaseInsensitiveConstants {
     public static final String SELECT_USER_CASE_INSENSITIVE = "SelectUserSQLCaseInsensitive";
+    public static final String SELECT_USER_NAME_CASE_INSENSITIVE = "SelectUserNameSQLCaseInsensitive";
+    public static final String SELECT_USER_WITH_ID_CASE_INSENSITIVE = "SelectUserWithIDSQLCaseInsensitive";
+    public static final String SELECT_USER_ID_FROM_USER_NAME_CASE_INSENSITIVE =
+            "SelectUserIDFromUserNameSQLCaseInsensitive";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE = "UserFilterSQLCaseInsensitive";
+    public static final String GET_USER_FILTER_WITH_ID_CASE_INSENSITIVE = "UserFilterWithIDSQLCaseInsensitive";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_WITH_ESCAPE = "UserFilterSQLCaseInsensitiveWithEscape";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED = "UserFilterPaginatedSQLCaseInsensitive";
+    public static final String GET_USER_FILTER_WITH_ID_CASE_INSENSITIVE_PAGINATED =
+            "UserFilterPaginatedWithIDSQLCaseInsensitive";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_MSSQL = "UserFilterPaginatedSQLCaseInsensitive-mssql";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_DB2 = "UserFilterPaginatedSQLCaseInsensitive-db2";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_ORACLE = "UserFilterPaginatedSQLCaseInsensitive-oracle";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_COUNT =
             "UserFilterPaginatedSQLCaseInsensitiveCount";
+    public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_COUNT_WITH_ID =
+            "UserFilterPaginatedSQLCaseInsensitiveCountWithID";
     public static final String GET_USER_ROLE_CASE_INSENSITIVE = "UserRoleSQLCaseInsensitive";
     public static final String GET_IS_USER_ROLE_EXIST_CASE_INSENSITIVE = "IsUserRoleExistSQLCaseInsensitive";
     public static final String GET_USERS_ROLE_CASE_INSENSITIVE = "UsersRoleSQLCaseInsensitive";
     public static final String GET_SHARED_ROLES_FOR_USER_CASE_INSENSITIVE = "UserSharedRoleSQLCaseInsensitive";
     public static final String GET_IS_USER_EXISTING_CASE_INSENSITIVE = "IsUserExistingSQLCaseInsensitive";
+    public static final String GET_IS_USER_NAME_EXISTING_CASE_INSENSITIVE = "IsUserNameExistingSQLCaseInsensitive";
     public static final String GET_PROPS_FOR_PROFILE_CASE_INSENSITIVE = "GetUserPropertiesForProfileSQLCaseInsensitive";
     public static final String GET_USERS_PROPS_FOR_PROFILE_CASE_INSENSITIVE =
             "GetUsersPropertiesForProfileSQLCaseInsensitive";
@@ -57,14 +67,31 @@ public class JDBCCaseInsensitiveConstants {
     public static final String UPDATE_USER_PROPERTY_CASE_INSENSITIVE = "UpdateUserPropertySQLCaseInsensitive";
     public static final String DELETE_USER_PROPERTY_CASE_INSENSITIVE = "DeleteUserPropertySQLCaseInsensitive";
     public static final String USER_NAME_UNIQUE_CASE_INSENSITIVE = "UserNameUniqueAcrossTenantsSQLCaseInsensitive";
+    public static final String USER_NAME_UNIQUE_CASE_INSENSITIVE_WITH_ID =
+            "UserNameUniqueAcrossTenantsSQLCaseInsensitiveWithID";
     public static final String SELECT_USER_SQL_CASE_INSENSITIVE = "SELECT * FROM UM_USER WHERE LOWER(UM_USER_NAME)" +
             "=LOWER(?) AND UM_TENANT_ID=?";
+    public static final String SELECT_USER_NAME_SQL_CASE_INSENSITIVE =
+            "SELECT UM_USER_ID, UM_USER_NAME, UM_USER_PASSWORD, UM_SALT_VALUE, "
+                    + "UM_REQUIRE_CHANGE, UM_CHANGED_TIME FROM UM_USER WHERE LOWER(UM_USER_NAME)=LOWER(?) AND UM_TENANT_ID=?";
+    public static final String SELECT_USER_ID_FROM_USER_NAME_SQL_CASE_INSENSITIVE =
+            "SELECT UM_USER_ID FROM UM_USER WHERE LOWER(UM_USER_NAME)=LOWER(?) AND UM_TENANT_ID=?";
+    public static final String SELECT_USER_WITH_ID_SQL_CASE_INSENSITIVE = "SELECT UM_USER.UM_USER_ID, UM_USER"
+            + ".UM_USER_NAME, UM_USER.UM_USER_PASSWORD, UM_USER.UM_SALT_VALUE, UM_USER.UM_REQUIRE_CHANGE, UM_USER"
+            + ".UM_CHANGED_TIME FROM UM_USER, UM_USER_ATTRIBUTE WHERE UM_USER_ATTRIBUTE.UM_USER_ID = UM_USER.UM_ID "
+            + "AND UM_USER_ATTRIBUTE.UM_ATTR_NAME =? AND LOWER(UM_USER_ATTRIBUTE.UM_ATTR_VALUE) =LOWER(?) AND "
+            + "UM_USER_ATTRIBUTE.UM_PROFILE_ID=? AND UM_USER_ATTRIBUTE.UM_TENANT_ID=? AND UM_USER.UM_TENANT_ID=?";
     public static final String GET_USER_FILTER_SQL_CASE_INSENSITIVE = "SELECT UM_USER_NAME FROM UM_USER WHERE LOWER" +
             "(UM_USER_NAME) LIKE LOWER(?) AND UM_TENANT_ID=? ORDER BY UM_USER_NAME";
+    public static final String GET_USER_FILTER_WITH_ID_SQL_CASE_INSENSITIVE = "SELECT UM_USER_ID, UM_USER_NAME FROM "
+            + "UM_USER WHERE LOWER(UM_USER_NAME) LIKE LOWER(?) AND UM_TENANT_ID=? ORDER BY UM_USER_NAME";
     public static final String GET_USER_FILTER_SQL_CASE_INSENSITIVE_WITH_ESCAPE = "SELECT UM_USER_NAME FROM UM_USER "
             + "WHERE LOWER(UM_USER_NAME) LIKE LOWER(?) ESCAPE ? AND UM_TENANT_ID=? ORDER BY UM_USER_NAME";
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_SQL = "SELECT UM_USER_NAME FROM UM_USER " +
             "WHERE LOWER(UM_USER_NAME) LIKE LOWER(?) AND UM_TENANT_ID=? ORDER BY UM_USER_NAME ASC LIMIT ? OFFSET ?";
+    public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_WITH_ID_SQL =
+            "SELECT UM_USER_ID, UM_USER_NAME FROM UM_USER WHERE LOWER(UM_USER_NAME) LIKE LOWER(?) AND UM_TENANT_ID=? "
+                    + "ORDER BY UM_USER_NAME ASC LIMIT ? OFFSET ?";
 
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_SQL_DB2 = "SELECT UM_USER_NAME FROM (SELECT" +
             " ROW_NUMBER() OVER (ORDER BY UM_USER_NAME) AS rn, U.*  FROM UM_USER AS U) WHERE UM_USER_NAME LIKE LOWER(?) AND " +
@@ -79,6 +106,9 @@ public class JDBCCaseInsensitiveConstants {
 
     public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_COUNT_SQL = "SELECT COUNT (UM_USER_NAME) " +
             "FROM UM_USER WHERE LOWER(UM_USER_NAME) LIKE LOWER(?) AND UM_TENANT_ID=?";
+
+    public static final String GET_USER_FILTER_CASE_INSENSITIVE_PAGINATED_COUNT_WITH_ID_SQL = "SELECT COUNT "
+            + "(UM_USER_ID) FROM UM_USER WHERE LOWER(UM_USER_NAME) LIKE LOWER(?) AND UM_TENANT_ID=?";
 
     public static final String GET_USER_ROLE_SQL_CASE_INSENSITIVE = "SELECT UM_ROLE_NAME FROM UM_USER_ROLE, UM_ROLE, " +
             "UM_USER WHERE LOWER(UM_USER.UM_USER_NAME)=LOWER(?) AND UM_USER.UM_ID=UM_USER_ROLE.UM_USER_ID AND UM_ROLE" +
@@ -102,6 +132,8 @@ public class JDBCCaseInsensitiveConstants {
             ".UM_USER_TENANT_ID = ? ";
     public static final String GET_IS_USER_EXISTING_SQL_CASE_INSENSITIVE = "SELECT UM_ID FROM UM_USER WHERE " +
             "LOWER(UM_USER_NAME)=LOWER(?) AND UM_TENANT_ID=?";
+    public static final String GET_IS_USER_NAME_EXISTING_SQL_CASE_INSENSITIVE = "SELECT UM_ID FROM UM_USER WHERE "
+            + "LOWER(UM_USER_NAME)=LOWER(?) AND UM_TENANT_ID=?";
     public static final String GET_PROPS_FOR_PROFILE_SQL_CASE_INSENSITIVE = "SELECT UM_ATTR_NAME, UM_ATTR_VALUE FROM " +
             "UM_USER_ATTRIBUTE, UM_USER WHERE UM_USER.UM_ID = UM_USER_ATTRIBUTE.UM_USER_ID AND LOWER(UM_USER" +
             ".UM_USER_NAME)=LOWER(?) AND UM_PROFILE_ID=? AND UM_USER_ATTRIBUTE.UM_TENANT_ID=? AND UM_USER" +
@@ -161,6 +193,8 @@ public class JDBCCaseInsensitiveConstants {
             "UM_ATTR_NAME=? AND UM_PROFILE_ID=? AND UM_TENANT_ID=?";
     public static final String USER_NAME_UNIQUE_SQL_CASE_INSENSITIVE = "SELECT UM_ID FROM UM_USER WHERE " +
             "LOWER(UM_USER_NAME)=LOWER(?)";
+    public static final String USER_NAME_UNIQUE_SQL_CASE_INSENSITIVE_WITH_ID =
+            "SELECT UM_ID FROM UM_USER_ATTRIBUTE WHERE UM_ATTR_NAME=? AND LOWER(UM_ATTR_VALUE)=LOWER(?)";
 
     // mssql
     public static final String ADD_USER_TO_ROLE_MSSQL_SQL_CASE_INSENSITIVE = "INSERT INTO UM_USER_ROLE (UM_USER_ID, " +
