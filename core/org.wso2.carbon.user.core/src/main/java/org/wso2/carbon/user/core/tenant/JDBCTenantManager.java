@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2024, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2005-2025, WSO2 LLC. (http://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -74,6 +74,7 @@ public class JDBCTenantManager implements TenantManager {
     public static final String COLUMN_NAME_UM_USER_CONFIG = "UM_USER_CONFIG";
     public static final String COLUMN_NAME_UM_TENANT_UUID = "UM_TENANT_UUID";
     public static final String COLUMN_NAME_UM_ORG_UUID = "UM_ORG_UUID";
+    public static final String COLUMN_NAME_UM_ORG_NAME = "UM_ORG_NAME";
 
     private static Log log = LogFactory.getLog(TenantManager.class);
     protected BundleContext bundleContext;
@@ -781,7 +782,7 @@ public class JDBCTenantManager implements TenantManager {
             dbConnection = getDBConnection();
             String sqlStmt = TenantConstants.GET_TENANT_BY_UUID_SQL;
             if (isOrgUUIDColumnAvailable()) {
-                sqlStmt = TenantConstants.GET_TENANT_BY_UUID_INCLUDING_UM_ORG_UUID_SQL;
+                sqlStmt = TenantConstants.GET_TENANT_BY_UUID_INCLUDING_ORG_UUID_AND_ORG_NAME_SQL;
             }
             prepStmt = dbConnection.prepareStatement(sqlStmt);
             prepStmt.setString(1, tenantUniqueID);
@@ -803,15 +804,17 @@ public class JDBCTenantManager implements TenantManager {
                 realmConfig.setTenantId(id);
                 String uniqueId = result.getString(COLUMN_NAME_UM_TENANT_UUID);
                 String associatedOrgID = null;
+                String name = null;
                 if (associatedOrgUUIDColumnExists) {
+                    name = result.getString(COLUMN_NAME_UM_ORG_NAME);
                     associatedOrgID = result.getString(COLUMN_NAME_UM_ORG_UUID);
                     realmConfig.setAssociatedOrganizationUUID(associatedOrgID);
                 }
-
                 tenant = new Tenant();
                 tenant.setTenantUniqueID(uniqueId);
                 tenant.setId(id);
                 tenant.setDomain(domain);
+                tenant.setName(name);
                 tenant.setEmail(email);
                 tenant.setCreatedDate(createdDate);
                 tenant.setActive(active);
@@ -1131,7 +1134,43 @@ public class JDBCTenantManager implements TenantManager {
             log.error(e);
             throw new UserStoreException(errorMsg, e);
         }
-    };
+    }
+
+    /**
+     * Returns the tenant name by tenant ID.
+     *
+     * @return The tenant name.
+     */
+    public String getTenantNameByID(int tenantId) throws UserStoreException {
+
+        String tenantName = null;
+        Connection dbConnection = null;
+        PreparedStatement prepStmt = null;
+        ResultSet result = null;
+        try {
+            dbConnection = getDBConnection();
+            String sqlStmt = TenantConstants.GET_TENANT_NAME_SQL;
+            prepStmt = dbConnection.prepareStatement(sqlStmt);
+            prepStmt.setInt(1, tenantId);
+
+            result = prepStmt.executeQuery();
+
+            if (result.next()) {
+                tenantName = result.getString(COLUMN_NAME_UM_ORG_NAME);
+            }
+            dbConnection.commit();
+        } catch (SQLException e) {
+            DatabaseUtil.rollBack(dbConnection);
+            String msg = "Error in getting the tenant name with tenant id: " + tenantId + ".";
+            if (log.isDebugEnabled()) {
+                log.debug(msg, e);
+            }
+            throw new UserStoreException(msg, e);
+        } finally {
+            DatabaseUtil.closeAllConnections(dbConnection, result, prepStmt);
+        }
+        return tenantName;
+    }
 
     private void clearTenantCache(int tenantId) throws UserStoreException {
 
@@ -1327,7 +1366,7 @@ public class JDBCTenantManager implements TenantManager {
             throw new UserStoreException(msg, e);
         }
         PreparedStatement prepStmt;
-        String sqlQuery = TenantConstants.LIST_TENANTS_PAGINATED_SQL;
+        String sqlQuery = TenantConstants.LIST_TENANTS_INCLUDING_ORG_NAME_PAGINATED_SQL;
         String sqlTail;
         int offsetParameter;
         int limitParameter;
@@ -1421,6 +1460,7 @@ public class JDBCTenantManager implements TenantManager {
             int id = resultSet.getInt(COLUMN_NAME_UM_ID);
             String domain = resultSet.getString(COLUMN_NAME_UM_DOMAIN_NAME);
             String email = resultSet.getString(COLUMN_NAME_UM_EMAIL);
+            String name = resultSet.getString(COLUMN_NAME_UM_ORG_NAME);
             boolean active = resultSet.getBoolean(COLUMN_NAME_UM_ACTIVE);
             Date createdDate = new Date(resultSet.getTimestamp(
                     COLUMN_NAME_UM_CREATED_DATE).getTime());
@@ -1434,6 +1474,7 @@ public class JDBCTenantManager implements TenantManager {
             Tenant tenant = new Tenant();
             tenant.setId(id);
             tenant.setDomain(domain);
+            tenant.setName(name);
             tenant.setEmail(email);
             tenant.setActive(active);
             tenant.setTenantUniqueID(tenantUniqueId);
