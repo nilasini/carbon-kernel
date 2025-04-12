@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2024, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2005-2025, WSO2 LLC. (http://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -123,6 +123,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
     public static final String QUERY_BINDING_SYMBOL = "?";
     private static final String CASE_INSENSITIVE_USERNAME = "CaseInsensitiveUsername";
     private static final String RANDOM_ALG_DRBG = "DRBG";
+    private static final String MULTI_ATTRIBUTE_SEPARATOR = "MultiAttributeSeparator";
 
     protected DataSource jdbcds = null;
     protected Random random = new Random();
@@ -1240,6 +1241,10 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         String[] propertyNamesSorted = propertyNames.clone();
         Arrays.sort(propertyNamesSorted);
         Map<String, String> map = new HashMap<String, String>();
+
+        List<String> multiValuedAttributes = findMultiValuedAttributes();
+        String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
+
         try {
             dbConnection = getDBConnection();
             if (isCaseSensitiveUsername()) {
@@ -1260,6 +1265,9 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 String value = rs.getString(2);
                 if (Arrays.binarySearch(propertyNamesSorted, name) < 0) {
                     continue;
+                }
+                if (multiValuedAttributes.contains(name) && map.containsKey(name)) {
+                    value = map.get(name) + multiAttributeSeparator +  value;
                 }
                 map.put(name, value);
             }
@@ -5320,5 +5328,24 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
             }
         }
         return false;
+    }
+
+    /**
+     * Find the multivalued attribute mapping for the current user store.
+     *
+     * @return List of multivalued attributes.
+     */
+    protected List<String> findMultiValuedAttributes() {
+
+        String domain = realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
+        try {
+            return Arrays.stream(claimManager.getAllClaimMappings())
+                    .filter(claimMapping -> claimMapping.getClaim().isMultiValued())
+                    .map(claimMapping -> claimMapping.getMappedAttribute(domain) != null ?
+                            claimMapping.getMappedAttribute(domain) : claimMapping.getMappedAttribute())
+                    .collect(Collectors.toList());
+        } catch (org.wso2.carbon.user.api.UserStoreException e) {
+            return new ArrayList<>();
+        }
     }
 }
