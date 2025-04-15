@@ -1242,9 +1242,6 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         Arrays.sort(propertyNamesSorted);
         Map<String, String> map = new HashMap<String, String>();
 
-        List<String> multiValuedAttributes = findMultiValuedAttributes();
-        String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
-
         try {
             dbConnection = getDBConnection();
             if (isCaseSensitiveUsername()) {
@@ -1259,6 +1256,9 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 prepStmt.setInt(3, tenantId);
                 prepStmt.setInt(4, tenantId);
             }
+            List<String> multiValuedAttributes = null;
+            String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
+
             rs = prepStmt.executeQuery();
             while (rs.next()) {
                 String name = rs.getString(1);
@@ -1266,8 +1266,14 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 if (Arrays.binarySearch(propertyNamesSorted, name) < 0) {
                     continue;
                 }
-                if (multiValuedAttributes.contains(name) && map.containsKey(name)) {
-                    value = map.get(name) + multiAttributeSeparator +  value;
+                // Handle multi valued attributes.
+                if (map.containsKey(name)) {
+                    if (multiValuedAttributes == null) {
+                        multiValuedAttributes = findMultiValuedAttributes();
+                    }
+                    if (multiValuedAttributes.contains(name)) {
+                        value = map.get(name) + multiAttributeSeparator +  value;
+                    }
                 }
                 map.put(name, value);
             }
@@ -5337,6 +5343,12 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
      */
     protected List<String> findMultiValuedAttributes() {
 
+        /*  During new tenant initialization admin user get provisioned when the default realm is not properly
+            initialized. That case required to be handled by identifying the tenant set in the user store manager and the
+            context is different. */
+        if (CarbonContext.getThreadLocalCarbonContext().getTenantId() != this.tenantId) {
+            return new ArrayList<>();
+        }
         String domain = realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
         try {
             return Arrays.stream(claimManager.getAllClaimMappings())

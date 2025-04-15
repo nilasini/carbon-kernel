@@ -579,9 +579,6 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
         Arrays.sort(propertyNamesSorted);
         Map<String, String> map = new HashMap<>();
 
-        List<String> multiValuedProperties = findMultiValuedAttributes();
-        String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
-
         String sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.GET_PROPS_FOR_PROFILE_WITH_ID);
         try {
             dbConnection = getDBConnection();
@@ -592,6 +589,9 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
                 prepStmt.setInt(3, tenantId);
                 prepStmt.setInt(4, tenantId);
             }
+            List<String> multiValuedProperties = null;
+            String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
+
             rs = prepStmt.executeQuery();
             while (rs.next()) {
                 String name = rs.getString(1);
@@ -599,8 +599,15 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
                 if (Arrays.binarySearch(propertyNamesSorted, name) < 0) {
                     continue;
                 }
-                if (multiValuedProperties.contains(name) && map.containsKey(name)) {
-                    value = map.get(name) + multiAttributeSeparator +  value;
+
+                // Handle multi valued attributes.
+                if (map.containsKey(name)) {
+                    if (multiValuedProperties == null) {
+                        multiValuedProperties = findMultiValuedAttributes();
+                    }
+                    if (multiValuedProperties.contains(name)) {
+                        value = map.get(name) + multiAttributeSeparator +  value;
+                    }
                 }
                 map.put(name, value);
             }
