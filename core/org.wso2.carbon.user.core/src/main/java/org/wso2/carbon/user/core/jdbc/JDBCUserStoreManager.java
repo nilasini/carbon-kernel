@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2024, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2005-2025, WSO2 LLC. (http://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -123,6 +123,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
     public static final String QUERY_BINDING_SYMBOL = "?";
     private static final String CASE_INSENSITIVE_USERNAME = "CaseInsensitiveUsername";
     private static final String RANDOM_ALG_DRBG = "DRBG";
+    private static final String MULTI_ATTRIBUTE_SEPARATOR = "MultiAttributeSeparator";
 
     protected DataSource jdbcds = null;
     protected Random random = new Random();
@@ -1254,12 +1255,24 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                 prepStmt.setInt(3, tenantId);
                 prepStmt.setInt(4, tenantId);
             }
+            List<String> multiValuedAttributes = null;
+            String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
+
             rs = prepStmt.executeQuery();
             while (rs.next()) {
                 String name = rs.getString(1);
                 String value = rs.getString(2);
                 if (Arrays.binarySearch(propertyNamesSorted, name) < 0) {
                     continue;
+                }
+                // Handle multi valued attributes.
+                if (map.containsKey(name)) {
+                    if (multiValuedAttributes == null) {
+                        multiValuedAttributes = findMultiValuedAttributes();
+                    }
+                    if (multiValuedAttributes.contains(name)) {
+                        value = map.get(name) + multiAttributeSeparator + value;
+                    }
                 }
                 map.put(name, value);
             }
@@ -5320,5 +5333,30 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
             }
         }
         return false;
+    }
+
+    /**
+     * Find the multivalued attribute mapping for the current user store.
+     *
+     * @return List of multivalued attributes.
+     */
+    protected List<String> findMultiValuedAttributes() {
+
+        /*  During new tenant initialization admin user get provisioned when the default realm is not properly
+            initialized. That case required to be handled by identifying the tenant set in the user store manager and the
+            context is different. */
+        if (CarbonContext.getThreadLocalCarbonContext().getTenantId() != this.tenantId) {
+            return new ArrayList<>();
+        }
+        String domain = realmConfig.getUserStoreProperty(UserCoreConstants.RealmConfig.PROPERTY_DOMAIN_NAME);
+        try {
+            return Arrays.stream(claimManager.getAllClaimMappings())
+                    .filter(claimMapping -> claimMapping.getClaim().isMultiValued())
+                    .map(claimMapping -> claimMapping.getMappedAttribute(domain) != null ?
+                            claimMapping.getMappedAttribute(domain) : claimMapping.getMappedAttribute())
+                    .collect(Collectors.toList());
+        } catch (org.wso2.carbon.user.api.UserStoreException e) {
+            return new ArrayList<>();
+        }
     }
 }

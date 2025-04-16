@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2019-2025, WSO2 LLC. (http://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -588,12 +588,25 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
                 prepStmt.setInt(3, tenantId);
                 prepStmt.setInt(4, tenantId);
             }
+            List<String> multiValuedProperties = null;
+            String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
+
             rs = prepStmt.executeQuery();
             while (rs.next()) {
                 String name = rs.getString(1);
                 String value = rs.getString(2);
                 if (Arrays.binarySearch(propertyNamesSorted, name) < 0) {
                     continue;
+                }
+
+                // Handle multi valued attributes.
+                if (map.containsKey(name)) {
+                    if (multiValuedProperties == null) {
+                        multiValuedProperties = findMultiValuedAttributes();
+                    }
+                    if (multiValuedProperties.contains(name)) {
+                        value = map.get(name) + multiAttributeSeparator + value;
+                    }
                 }
                 map.put(name, value);
             }
@@ -2037,6 +2050,11 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
                     receivedProperties.toArray(new String[0]), profileName);
 
             dbConnection = getDBConnection();
+            List<String> multiValuedAttributes = findMultiValuedAttributes();
+            multiValuedAttributes = multiValuedAttributes.stream().filter(receivedProperties::contains)
+                    .collect(Collectors.toList());
+            deleteMultiValuedAttributes(dbConnection, userId, multiValuedAttributes, profileName);
+            multiValuedAttributes.forEach(alreadyAvailableProperties.keySet()::remove);
             addPropertiesWithID(dbConnection, userId, filterNewlyAddedProperties(processedClaimAttributes,
                     alreadyAvailableProperties), profileName);
             updateProperties(dbConnection, userId, filterUpdatedProperties(processedClaimAttributes,
@@ -3035,6 +3053,9 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
             throw new UserStoreException("The sql statement for add user property sql is null");
         }
 
+        List<String> multiValuedAttributes = findMultiValuedAttributes();
+        String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
+
         PreparedStatement prepStmt = null;
         boolean localConnection = false;
 
@@ -3054,17 +3075,26 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
 
             for (Map.Entry<String, String> entry : userAttributes.entrySet()) {
                 String propertyName = entry.getKey();
-                String propertyValue = entry.getValue();
-                if (sqlStmt.contains(UserCoreConstants.UM_TENANT_COLUMN)) {
-                    if (UserCoreConstants.OPENEDGE_TYPE.equals(type)) {
-                        batchUpdateStringValuesToDatabase(prepStmt, propertyName, propertyValue, profileName, tenantId,
-                                userID, tenantId);
-                    } else {
-                        batchUpdateStringValuesToDatabase(prepStmt, userID, tenantId, propertyName, propertyValue,
-                                profileName, tenantId);
-                    }
+                List<String> propertyValues = new ArrayList<>();
+                if (multiValuedAttributes.contains(propertyName)) {
+                    String[] values = entry.getValue().split(multiAttributeSeparator);
+                    propertyValues.addAll(Arrays.asList(values));
                 } else {
-                    batchUpdateStringValuesToDatabase(prepStmt, userID, propertyName, propertyValue, profileName);
+                    propertyValues.add(entry.getValue());
+                }
+
+                for (String propertyValue : propertyValues) {
+                    if (sqlStmt.contains(UserCoreConstants.UM_TENANT_COLUMN)) {
+                        if (UserCoreConstants.OPENEDGE_TYPE.equals(type)) {
+                            batchUpdateStringValuesToDatabase(prepStmt, propertyName, propertyValue, profileName,
+                                    tenantId, userID, tenantId);
+                        } else {
+                            batchUpdateStringValuesToDatabase(prepStmt, userID, tenantId, propertyName, propertyValue,
+                                    profileName, tenantId);
+                        }
+                    } else {
+                        batchUpdateStringValuesToDatabase(prepStmt, userID, propertyName, propertyValue, profileName);
+                    }
                 }
             }
 
@@ -5139,6 +5169,14 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
             }
             throw new UserStoreClientException(ERROR_UNSUPPORTED_DATE_SEARCH_FILTER.getMessage(),
                     ERROR_UNSUPPORTED_DATE_SEARCH_FILTER.getCode(), e);
+        }
+    }
+
+    private void deleteMultiValuedAttributes(Connection dbConnection, String userId, List<String> multiValuedAttributes,
+                                             String profileName) throws UserStoreException {
+
+        for (String attribute : multiValuedAttributes) {
+            deletePropertyWithID(dbConnection, userId, attribute, profileName);
         }
     }
 }
