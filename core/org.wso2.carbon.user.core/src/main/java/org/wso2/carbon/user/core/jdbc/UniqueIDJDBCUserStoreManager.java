@@ -605,7 +605,7 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
                         multiValuedProperties = findMultiValuedAttributes();
                     }
                     if (multiValuedProperties.contains(name)) {
-                        value = map.get(name) + multiAttributeSeparator +  value;
+                        value = map.get(name) + multiAttributeSeparator + value;
                     }
                 }
                 map.put(name, value);

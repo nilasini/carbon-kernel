@@ -1271,7 +1271,7 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
                         multiValuedAttributes = findMultiValuedAttributes();
                     }
                     if (multiValuedAttributes.contains(name)) {
-                        value = map.get(name) + multiAttributeSeparator +  value;
+                        value = map.get(name) + multiAttributeSeparator + value;
                     }
                 }
                 map.put(name, value);
