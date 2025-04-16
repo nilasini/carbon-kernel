@@ -1241,7 +1241,6 @@ public class JDBCUserStoreManager extends AbstractUserStoreManager {
         String[] propertyNamesSorted = propertyNames.clone();
         Arrays.sort(propertyNamesSorted);
         Map<String, String> map = new HashMap<String, String>();
-
         try {
             dbConnection = getDBConnection();
             if (isCaseSensitiveUsername()) {

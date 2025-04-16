@@ -578,7 +578,6 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
         String[] propertyNamesSorted = propertyNames.clone();
         Arrays.sort(propertyNamesSorted);
         Map<String, String> map = new HashMap<>();
-
         String sqlStmt = realmConfig.getUserStoreProperty(JDBCRealmConstants.GET_PROPS_FOR_PROFILE_WITH_ID);
         try {
             dbConnection = getDBConnection();
