@@ -67,12 +67,26 @@ public class CachingTestCase {
     }
 
     @Test(groups = {"org.wso2.carbon.clustering.hazelcast.jsr107"},
-          dependsOnMethods = "checkNonExistentItem",
-          description = "")
+            dependsOnMethods = "checkNonExistentItem",
+            description = "")
     public void checkPut() throws Exception {
         Integer sampleValue = 1245;
         cache.put(key, sampleValue);
         assertEquals(cache.get(key), sampleValue);
+    }
+
+    @Test(groups = {"org.wso2.carbon.clustering.hazelcast.jsr107"},
+            dependsOnMethods = "checkNonExistentItem",
+            description = "")
+    public void checkPutIfNoDuplicate() throws Exception {
+        Integer sampleValue = 1245;
+        Integer newSampleValue = 1111;
+        cache.putIfNoDuplicate(key, sampleValue);
+        assertEquals(cache.get(key), sampleValue);
+        cache.putIfNoDuplicate(key, sampleValue);
+        assertEquals(cache.get(key), sampleValue);
+        cache.putIfNoDuplicate(key, newSampleValue);
+        assertEquals(cache.get(key), newSampleValue);
     }
 
     @Test(groups = {"org.wso2.carbon.clustering.hazelcast.jsr107"},
