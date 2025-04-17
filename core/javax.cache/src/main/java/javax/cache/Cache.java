@@ -200,6 +200,30 @@ public interface Cache<K, V> extends Iterable<Cache.Entry<K, V>>, CacheLifecycle
     void put(K key, V value);
 
     /**
+     * Associates the specified value with the specified key in this cache
+     * If the cache previously contained a mapping for
+     * the key, the old value is replaced by the specified value if the value
+     * is not equal to the value already existing in the cache.  (A cache
+     * <tt>c</tt> is said to contain a mapping for a key <tt>k</tt> if and only
+     * if {@link #containsKey(Object) c.containsKey(k)} would return
+     * <tt>true</tt>.)
+     * <p/>
+     * In contrast to the corresponding Map operation, does not return
+     * the previous value.
+     *
+     * @param key   key with which the specified value is to be associated
+     * @param value value to be associated with the specified key
+     * @throws NullPointerException  if key is null or if value is null
+     * @throws IllegalStateException if the cache is not {@link Status#STARTED}
+     * @throws CacheException        if there is a problem doing the put
+     * @see java.util.Map#put(Object, Object)
+     * @see #getAndPut(Object, Object)
+     * @see #getAndReplace(Object, Object)
+     */
+    void putIfNoDuplicate(K key, V value);
+
+
+    /**
      * Associates the specified value with the specified key in this cache,
      * returning an existing value if one existed.
      * <p/>
