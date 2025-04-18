@@ -2867,6 +2867,8 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
                 prepStmt.setInt(index++, tenantId);
                 prepStmt.setInt(index, tenantId);
             }
+            List<String> multiValuedAttributes = null;
+            String multiAttributeSeparator = realmConfig.getUserStoreProperty(MULTI_ATTRIBUTE_SEPARATOR);
 
             rs = prepStmt.executeQuery();
             while (rs.next()) {
@@ -2878,7 +2880,17 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
                 String value = rs.getString(3);
 
                 if (usersPropertyValuesMap.get(userID) != null) {
-                    usersPropertyValuesMap.get(userID).put(name, value);
+                    Map<String, String> map = usersPropertyValuesMap.get(userID);
+                    // Handle multi valued attributes.
+                    if (map.containsKey(name)) {
+                        if (multiValuedAttributes == null) {
+                            multiValuedAttributes = findMultiValuedAttributes();
+                        }
+                        if (multiValuedAttributes.contains(name)) {
+                            value = map.get(name) + multiAttributeSeparator + value;
+                        }
+                    }
+                    map.put(name, value);
                 } else {
                     Map<String, String> attributes = new HashMap<>();
                     attributes.put(name, value);
