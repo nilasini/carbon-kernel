@@ -4027,6 +4027,8 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
                             credBuff = new StringBuffer();
                         } else if (newCredential instanceof String) {
                             credBuff = new StringBuffer((String) newCredential);
+                        } else if (newCredential instanceof char[]) {
+                            credBuff = new StringBuffer().append((char[]) newCredential);
                         }
 
                         if (credBuff != null) {
@@ -14702,6 +14704,8 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
                             credBuff = new StringBuffer();
                         } else if (newCredential instanceof String) {
                             credBuff = new StringBuffer((String) newCredential);
+                        } else if (newCredential instanceof char[]) {
+                            credBuff = new StringBuffer().append((char[]) newCredential);
                         }
 
                         if (credBuff != null) {
