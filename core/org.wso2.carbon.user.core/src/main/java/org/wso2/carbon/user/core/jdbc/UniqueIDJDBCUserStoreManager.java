@@ -4420,7 +4420,7 @@ public class UniqueIDJDBCUserStoreManager extends JDBCUserStoreManager {
     @Override
     public void doUpdateGroupNameByGroupId(String groupId, String newGroupName) throws UserStoreException {
 
-        if (!isUniqueGroupIdEnabled()) {
+        if (!isUniqueGroupIdEnabled() && !isGroupIdDualWriteModeEnabled()) {
             throw new UserStoreException("Group ID is not supported for userstore: " + getMyDomainName());
         }
         if (StringUtils.isBlank(groupId)) {
