@@ -1136,38 +1136,24 @@ public class JDBCTenantManager implements TenantManager {
         }
     }
 
-    /**
-     * Returns the tenant name by tenant ID.
-     *
-     * @return The tenant name.
-     */
+    @Override
     public String getTenantNameByID(int tenantId) throws UserStoreException {
 
         String tenantName = null;
-        Connection dbConnection = null;
-        PreparedStatement prepStmt = null;
-        ResultSet result = null;
-        try {
-            dbConnection = getDBConnection();
-            String sqlStmt = TenantConstants.GET_TENANT_NAME_SQL;
-            prepStmt = dbConnection.prepareStatement(sqlStmt);
+        try (Connection dbConnection = getDBConnection();
+             PreparedStatement prepStmt = dbConnection.prepareStatement(TenantConstants.GET_TENANT_NAME_SQL)) {
             prepStmt.setInt(1, tenantId);
 
-            result = prepStmt.executeQuery();
-
-            if (result.next()) {
-                tenantName = result.getString(COLUMN_NAME_UM_ORG_NAME);
+            try (ResultSet result = prepStmt.executeQuery()) {
+                if (result.next()) {
+                    tenantName = result.getString(COLUMN_NAME_UM_ORG_NAME);
+                }
             }
             dbConnection.commit();
         } catch (SQLException e) {
-            DatabaseUtil.rollBack(dbConnection);
-            String msg = "Error in getting the tenant name with tenant id: " + tenantId + ".";
-            if (log.isDebugEnabled()) {
-                log.debug(msg, e);
-            }
+            String msg = String.format("Error in getting the tenant name with tenant id: %s.", tenantId);
+            log.debug(msg, e);
             throw new UserStoreException(msg, e);
-        } finally {
-            DatabaseUtil.closeAllConnections(dbConnection, result, prepStmt);
         }
         return tenantName;
     }
