@@ -400,6 +400,24 @@ public class CacheImpl<K, V> implements Cache<K, V> {
         }
     }
 
+    @Override
+    public void putIfNoDuplicate(K key, V value) {
+
+        Util.checkAccess(ownerTenantDomain, ownerTenantId);
+        checkStatusStarted();
+        lastAccessed = System.currentTimeMillis();
+        CacheEntry entry = localCache.get(key);
+        V oldValue = entry != null ? (V) entry.getValue() : null;
+        if (oldValue == null) {
+            internalPut(key, value);
+            notifyCacheEntryCreated(key, value);
+        } else if(!oldValue.equals(value)) {
+            entry.setValue(value);
+            internalPut(key, value);
+            notifyCacheEntryUpdated(key, value);
+        }
+    }
+
     private void notifyCacheEntryCreated(K key, V value) {
         CacheEntryEvent event = createCacheEntryEvent(key, value);
         for (CacheEntryListener cacheEntryListener : cacheEntryListeners) {

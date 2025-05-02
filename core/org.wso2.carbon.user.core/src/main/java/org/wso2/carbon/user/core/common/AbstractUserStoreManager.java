@@ -4027,6 +4027,8 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
                             credBuff = new StringBuffer();
                         } else if (newCredential instanceof String) {
                             credBuff = new StringBuffer((String) newCredential);
+                        } else if (newCredential instanceof char[]) {
+                            credBuff = new StringBuffer().append((char[]) newCredential);
                         }
 
                         if (credBuff != null) {
@@ -5344,6 +5346,16 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
     public boolean isUniqueGroupIdEnabled() {
 
         return Boolean.parseBoolean(realmConfig.getUserStoreProperty(UserStoreConfigConstants.GROUP_ID_ENABLED));
+    }
+
+    /**
+     * Checks whether this user store supports dual write mode for group id.
+     *
+     * @return True if this user store supports dual write mode for group id.
+     */
+    public boolean isGroupIdDualWriteModeEnabled() {
+
+        return Boolean.parseBoolean(realmConfig.getUserStoreProperty(UserStoreConfigConstants.GROUP_ID_DUAL_WRITE_MODE_ENABLED));
     }
 
     /**
@@ -14702,6 +14714,8 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
                             credBuff = new StringBuffer();
                         } else if (newCredential instanceof String) {
                             credBuff = new StringBuffer((String) newCredential);
+                        } else if (newCredential instanceof char[]) {
+                            credBuff = new StringBuffer().append((char[]) newCredential);
                         }
 
                         if (credBuff != null) {
@@ -17970,9 +17984,10 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
             handleAddGroupFailure(errorCode, errorMessage, groupName, null, usersIds, claims);
             throw new UserStoreClientException(errorMessage, errorCode);
         }
-        Group group;
+        Group group = null;
         String groupId = generateGroupUUID();
-        if (isUniqueGroupIdEnabled(this)) {
+        boolean isUniqueGroupIdEnabled = isUniqueGroupIdEnabled(this);
+        if (isUniqueGroupIdEnabled || isGroupIdDualWriteModeEnabled(this)) {
             if (!isUniqueUserIdEnabledInUserStore(userStore)) {
                 String errorCode = ErrorMessages.ERROR_CODE_GROUP_UUID_NOT_SUPPORTED.getCode();
                 String errorMessage = ErrorMessages.ERROR_CODE_GROUP_UUID_NOT_SUPPORTED.getMessage();
@@ -17980,23 +17995,30 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
                 throw new UserStoreException(errorCode + "-" + errorMessage);
             }
             group = doAddGroup(groupName, groupId, usersIds, buildClaimsList(claims));
-            groupUniqueIDDomainResolver.setDomainForGroupId(group.getGroupID(), getMyDomainName(), tenantId,
-                    false);
-        } else {
+            if (isUniqueGroupIdEnabled) {
+                groupUniqueIDDomainResolver.setDomainForGroupId(group.getGroupID(), getMyDomainName(), tenantId,
+                        false);
+            }
+        }
+        if (!isUniqueGroupIdEnabled || isGroupIdDualWriteModeEnabled(this)) {
             // Backward compatibility support. Use group resolver to update the other required places.
             GroupResolver groupResolver = UserStoreMgtDataHolder.getInstance().getGroupResolver();
             try {
                 group = groupResolver.addGroup(groupName, groupId, claims, this);
-                if (isUniqueUserIdEnabledInUserStore(userStore)) {
-                    doAddGroupWithUserIds(groupName, usersIds);
-                } else {
-                    List<User> users = userUniqueIDManger.getUsers(usersIds, this);
-                    doAddGroupWithUserNames(groupName,
-                            users.stream().map(User::getUsername).collect(Collectors.toList()));
+                if (!isUniqueGroupIdEnabled && !isGroupIdDualWriteModeEnabled(this)) {
+                    if (isUniqueUserIdEnabledInUserStore(userStore)) {
+                        doAddGroupWithUserIds(groupName, usersIds);
+                    } else {
+                        List<User> users = userUniqueIDManger.getUsers(usersIds, this);
+                        doAddGroupWithUserNames(groupName,
+                                users.stream().map(User::getUsername).collect(Collectors.toList()));
+                    }
                 }
-                // Update only the cache since the ID can be found in our side.
-                groupUniqueIDDomainResolver.setDomainForGroupId(group.getGroupID(), getMyDomainName(), tenantId,
-                        true);
+                if (!isUniqueGroupIdEnabled) {
+                    // Update only the cache since the ID can be found in our side.
+                    groupUniqueIDDomainResolver.setDomainForGroupId(group.getGroupID(), getMyDomainName(), tenantId,
+                            true);
+                }
             } catch (UserStoreException e) {
                 log.debug("error occurred while adding group:" + groupName, e);
                 groupResolver.deleteGroupByName(groupName, this);
@@ -18010,6 +18032,14 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
         handlePostAddRoleWithID(groupName, usersIds.toArray(new String[0]), null, false);
         // #################### </Post-Listeners> #####################################################
         return group;
+    }
+
+    private boolean isGroupIdDualWriteModeEnabled(UserStoreManager userStoreManager) {
+
+        if (!(userStoreManager instanceof AbstractUserStoreManager)) {
+            return false;
+        }
+        return ((AbstractUserStoreManager) userStoreManager).isGroupIdDualWriteModeEnabled();
     }
 
     private Map<String, String> buildClaimsList(List<org.wso2.carbon.user.core.common.Claim> claims) {
@@ -18590,7 +18620,7 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
         // ############################### </Pre-Listeners> ##########################################
         clearGroupIDResolverCache(groupID, tenantId);
         try {
-            if (isUniqueGroupIdEnabled()) {
+            if (isUniqueGroupIdEnabled() || isGroupIdDualWriteModeEnabled()) {
                 doUpdateGroupNameByGroupId(groupID, newGroupName);
             } else {
                 // Current group name does not have the domain here.
