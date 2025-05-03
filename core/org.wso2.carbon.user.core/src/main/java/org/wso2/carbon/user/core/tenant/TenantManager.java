@@ -1,20 +1,21 @@
 /*
-*  Copyright (c) 2005-2010, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
-*
-*  WSO2 Inc. licenses this file to you under the Apache License,
-*  Version 2.0 (the "License"); you may not use this file except
-*  in compliance with the License.
-*  You may obtain a copy of the License at
-*
-*    http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing,
-* software distributed under the License is distributed on an
-* "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-* KIND, either express or implied.  See the License for the
-* specific language governing permissions and limitations
-* under the License.
-*/
+ * Copyright (c) 2005-2025, WSO2 LLC. (http://www.wso2.com).
+ *
+ * WSO2 LLC. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package org.wso2.carbon.user.core.tenant;
 
 import org.osgi.framework.BundleContext;
@@ -109,5 +110,17 @@ public interface TenantManager extends org.wso2.carbon.user.api.TenantManager {
 
         throw new NotImplementedException(
                 "deleteTenant operation is not implemented in: " + this.getClass());
+    }
+
+    /**
+     * Gets a tenant name from the tenant ID.
+     *
+     * @param tenantId tenant unique identifier.
+     * @return Tenant name.
+     * @throws UserStoreException if there is an error in tenant retrieval.
+     */
+    default String getTenantNameByID(int tenantId) throws UserStoreException {
+
+        throw new NotImplementedException("getTenantNameByID operation is not implemented in: " + this.getClass());
     }
 }

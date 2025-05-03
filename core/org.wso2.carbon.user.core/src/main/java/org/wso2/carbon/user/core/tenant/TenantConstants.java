@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2024, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2005-2025, WSO2 LLC. (http://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -49,9 +49,17 @@ public class TenantConstants {
             "UM_CREATED_DATE, UM_ACTIVE, UM_CREATED_DATE, UM_USER_CONFIG, UM_TENANT_UUID FROM UM_TENANT WHERE " +
             "UM_TENANT_UUID=?";
 
+    /**
+     * @deprecated Use {@link #GET_TENANT_BY_UUID_INCLUDING_ORG_UUID_AND_ORG_NAME_SQL} instead.
+     */
+    @Deprecated
     public static final String GET_TENANT_BY_UUID_INCLUDING_UM_ORG_UUID_SQL = "SELECT UM_ID, UM_DOMAIN_NAME, UM_EMAIL, " +
             "UM_CREATED_DATE, UM_ACTIVE, UM_CREATED_DATE, UM_USER_CONFIG, UM_TENANT_UUID, UM_ORG_UUID FROM UM_TENANT WHERE " +
             "UM_TENANT_UUID=?";
+    public static final String GET_TENANT_BY_UUID_INCLUDING_ORG_UUID_AND_ORG_NAME_SQL = "SELECT T.UM_ID, " +
+            "T.UM_DOMAIN_NAME, T.UM_EMAIL, T.UM_CREATED_DATE, T.UM_ACTIVE, T.UM_CREATED_DATE, T.UM_USER_CONFIG, " +
+            "T.UM_TENANT_UUID, T.UM_ORG_UUID, O.UM_ORG_NAME FROM UM_TENANT T " +
+            "INNER JOIN UM_ORG O ON T.UM_ORG_UUID = O.UM_ID WHERE UM_TENANT_UUID=?";
     public static final String GET_ALL_TENANTS_SQL = "SELECT UM_ID, UM_DOMAIN_NAME, UM_EMAIL, " +
             "UM_CREATED_DATE, UM_ACTIVE FROM UM_TENANT ORDER BY UM_ID";
     public static final String GET_ALL_TENANTS_EXCEPT_ORGANIZATIONS_SQL = "SELECT UM_ID, UM_DOMAIN_NAME, UM_EMAIL, " +
@@ -60,9 +68,18 @@ public class TenantConstants {
     public static final String LIST_TENANTS_COUNT_SQL = "SELECT COUNT(*) FROM UM_TENANT";
     public static final String COUNT_TENANTS_EXCLUDING_ORGANIZATIONS_SQL = " UM_ORG_UUID " +
             "IN (SELECT UM_ID FROM UM_ORG WHERE UM_PARENT_ID IS NULL)";
+
+    /**
+     * @deprecated Use {@link #LIST_TENANTS_INCLUDING_ORG_NAME_PAGINATED_SQL} instead.
+     */
+    @Deprecated
     public static final String LIST_TENANTS_PAGINATED_SQL = "SELECT UM_ID, UM_DOMAIN_NAME, UM_EMAIL, " +
             "UM_CREATED_DATE, UM_ACTIVE, UM_USER_CONFIG, UM_TENANT_UUID FROM UM_TENANT WHERE UM_ORG_UUID IN " +
             "(SELECT UM_ID FROM UM_ORG WHERE UM_PARENT_ID IS NULL) ";
+    public static final String LIST_TENANTS_INCLUDING_ORG_NAME_PAGINATED_SQL = "SELECT T.UM_ID, T.UM_DOMAIN_NAME, " +
+            "T.UM_EMAIL, T.UM_CREATED_DATE, T.UM_ACTIVE, T.UM_USER_CONFIG, T.UM_TENANT_UUID, O.UM_ORG_NAME " +
+            "FROM UM_TENANT T INNER JOIN UM_ORG O ON T.UM_ORG_UUID = O.UM_ID " +
+            "WHERE T.UM_ORG_UUID IN (SELECT UM_ID FROM UM_ORG WHERE UM_PARENT_ID IS NULL) ";
     public static final String LIST_TENANTS_PAGINATED_ORACLE = "SELECT UM_ID, UM_DOMAIN_NAME, UM_EMAIL, " +
             "UM_CREATED_DATE, UM_ACTIVE, UM_USER_CONFIG, UM_TENANT_UUID FROM (SELECT UM_ID, UM_DOMAIN_NAME, UM_EMAIL, " +
             "UM_CREATED_DATE, UM_ACTIVE, UM_USER_CONFIG, UM_TENANT_UUID, rownum AS rnum FROM (SELECT UM_ID, " +
@@ -79,6 +96,8 @@ public class TenantConstants {
     public static final String LIST_TENANTS_DOMAIN_FILTER_LIKE = "%s UM_DOMAIN_NAME LIKE ? ";
     public static final String LIST_TENANTS_DOMAIN_FILTER_EQUAL = "%s UM_DOMAIN_NAME=? ";
     public static final String GET_DOMAIN_SQL = "SELECT UM_DOMAIN_NAME FROM UM_TENANT WHERE UM_ID=?";
+    public static final String GET_TENANT_NAME_SQL = "SELECT O.UM_ORG_NAME FROM UM_TENANT T " +
+            "INNER JOIN UM_ORG O ON T.UM_ORG_UUID = O.UM_ID WHERE T.UM_ID = ?";
     public static final String GET_TENANT_ID_SQL = "SELECT UM_ID FROM UM_TENANT WHERE UM_DOMAIN_NAME=?";
     public static final String ACTIVATE_SQL = "UPDATE UM_TENANT SET UM_ACTIVE='1' WHERE UM_ID=?";
     public static final String DEACTIVATE_SQL = "UPDATE UM_TENANT SET UM_ACTIVE='0' WHERE UM_ID=?";
