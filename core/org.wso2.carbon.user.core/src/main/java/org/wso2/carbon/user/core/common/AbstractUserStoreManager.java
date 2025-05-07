@@ -18627,12 +18627,27 @@ public abstract class AbstractUserStoreManager implements PaginatedUserStoreMana
                 doUpdateGroupName(currentGroupName, UserCoreUtil.removeDomainFromName(newGroupName));
             }
         } catch (UserStoreException e) {
-            // Add the deleted mapping back to the cache and the DB.
-            addGroupNameToGroupIdCache(groupID, UserCoreUtil.removeDomainFromName(currentGroupName), getMyDomainName());
-            handleRenameGroupFailure(ErrorMessages.ERROR_WHILE_RENAME_GROUP.getCode(),
-                    String.format(ErrorMessages.ERROR_WHILE_RENAME_GROUP.getMessage(), e.getMessage()), groupID,
-                    newGroupName);
-            throw e;
+            if (!isUniqueGroupIdEnabled() && isGroupIdDualWriteModeEnabled()) {
+                if (e.getMessage().contains("No group found with the id")) {
+                    try {
+                        doUpdateGroupName(currentGroupName, UserCoreUtil.removeDomainFromName(newGroupName));
+                    } catch (UserStoreException ex) {
+                        // Add the deleted mapping back to the cache and the DB.
+                        addGroupNameToGroupIdCache(groupID, UserCoreUtil.removeDomainFromName(currentGroupName), getMyDomainName());
+                        handleRenameGroupFailure(ErrorMessages.ERROR_WHILE_RENAME_GROUP.getCode(),
+                                String.format(ErrorMessages.ERROR_WHILE_RENAME_GROUP.getMessage(), ex.getMessage()),
+                                groupID, newGroupName);
+                        throw ex;
+                    }
+                }
+            } else {
+                // Add the deleted mapping back to the cache and the DB.
+                addGroupNameToGroupIdCache(groupID, UserCoreUtil.removeDomainFromName(currentGroupName), getMyDomainName());
+                handleRenameGroupFailure(ErrorMessages.ERROR_WHILE_RENAME_GROUP.getCode(),
+                        String.format(ErrorMessages.ERROR_WHILE_RENAME_GROUP.getMessage(), e.getMessage()), groupID,
+                        newGroupName);
+                throw e;
+            }
         }
         addGroupNameToGroupIdCache(groupID, UserCoreUtil.removeDomainFromName(newGroupName), this.getMyDomainName());
         // ############################### <Post-Listeners> ##########################################
